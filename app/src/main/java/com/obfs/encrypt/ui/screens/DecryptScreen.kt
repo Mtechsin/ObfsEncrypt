@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,7 +59,7 @@ fun DecryptScreen(
     var showOutputDialog by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var selectedOutputUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingShowPassword by remember { mutableStateOf(false) }
+    var dialogStep by remember { mutableIntStateOf(0) } // 0=none, 1=output, 2=password
     var visible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -65,12 +67,20 @@ fun DecryptScreen(
         visible = true
     }
 
-    // Handle dialog sequencing to avoid race conditions
-    LaunchedEffect(pendingShowPassword) {
-        if (pendingShowPassword) {
-            delay(100) // Delay to allow OutputLocationDialog to fully dismiss
-            showPasswordDialog = true
-            pendingShowPassword = false
+    // Step 1: File selected, show output dialog
+    LaunchedEffect(selectedUris) {
+        if (selectedUris.isNotEmpty()) {
+            dialogStep = 1
+        }
+    }
+
+    // Handle dialog sequencing
+    LaunchedEffect(dialogStep) {
+        when (dialogStep) {
+            2 -> {
+                delay(150)
+                showPasswordDialog = true
+            }
         }
     }
 
@@ -90,23 +100,33 @@ fun DecryptScreen(
                 android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             selectedOutputUri = it
+            // Auto-advance after folder selection
+            dialogStep = 2
+            showOutputDialog = false
         }
     }
 
     if (showOutputDialog) {
-        android.util.Log.d("DecryptScreen", "Attempting to render OutputLocationDialog from DecryptScreen")
         val currentOutputUri by viewModel.currentOutputUri.collectAsState()
 
         OutputLocationDialog(
             currentOutputUri = currentOutputUri,
             selectedUri = selectedOutputUri,
             onSelectCustomFolder = { folderPickerLauncher.launch(null) },
-            onClearCustomFolder = { selectedOutputUri = null },
-            onDismiss = { showOutputDialog = false },
+            onClearCustomFolder = { 
+                selectedOutputUri = null
+                dialogStep = 2
+                showOutputDialog = false
+            },
+            onDismiss = { 
+                showOutputDialog = false
+                selectedUris = emptyList()
+                dialogStep = 0
+            },
             onConfirm = {
                 viewModel.setCurrentOutputDirectory(selectedOutputUri)
                 showOutputDialog = false
-                pendingShowPassword = true
+                dialogStep = 2
             }
         )
     }
@@ -115,10 +135,16 @@ fun DecryptScreen(
         PasswordDialog(
              uris = selectedUris,
              isFolder = false,
-             onDismiss = { showPasswordDialog = false },
+             onDismiss = { 
+                 showPasswordDialog = false
+                 dialogStep = 1
+                 showOutputDialog = true
+             },
              onConfirm = { password, deleteOriginal ->
                   showPasswordDialog = false
+                  dialogStep = 0
                   viewModel.decryptFiles(selectedUris, password, deleteOriginal)
+                  selectedUris = emptyList()
                   onNavigateToProgress("decrypt")
              },
              showDeleteOption = true,

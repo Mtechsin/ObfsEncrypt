@@ -394,25 +394,27 @@ private fun EncryptTabContent(
     var showMethodDialog by remember { mutableStateOf(false) }
     var selectedMethod by remember { mutableStateOf(EncryptionMethod.STANDARD) }
     var showPasswordDialog by remember { mutableStateOf(false) }
-    var pendingShowMethod by remember { mutableStateOf(false) }
-    var pendingShowPasswordFromMethod by remember { mutableStateOf(false) }
     var selectedOutputUri by remember { mutableStateOf<Uri?>(null) }
+    var dialogStep by remember { mutableIntStateOf(0) } // 0=none, 1=output, 2=method, 3=password
 
-
-    // Handle dialog sequencing to avoid race conditions
-    LaunchedEffect(pendingShowMethod) {
-        if (pendingShowMethod) {
-            delay(100) // Delay to allow OutputLocationDialog to fully dismiss
-            showMethodDialog = true
-            pendingShowMethod = false
+    // Step 1: File selected, show output dialog
+    LaunchedEffect(selectedUris) {
+        if (selectedUris.isNotEmpty()) {
+            dialogStep = 1
         }
     }
 
-    LaunchedEffect(pendingShowPasswordFromMethod) {
-        if (pendingShowPasswordFromMethod) {
-            delay(100) // Delay to allow EncryptionMethodDialog to fully dismiss
-            showPasswordDialog = true
-            pendingShowPasswordFromMethod = false
+    // Handle dialog sequencing
+    LaunchedEffect(dialogStep) {
+        when (dialogStep) {
+            2 -> {
+                delay(150)
+                showMethodDialog = true
+            }
+            3 -> {
+                delay(150)
+                showPasswordDialog = true
+            }
         }
     }
 
@@ -433,34 +435,48 @@ private fun EncryptTabContent(
                 android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             selectedOutputUri = it
+            // Auto-advance after folder selection
+            dialogStep = 2
+            showOutputDialog = false
         }
     }
 
     if (showOutputDialog) {
-        android.util.Log.d("HomeScreen", "Attempting to render OutputLocationDialog from HomeScreen")
         val currentOutputUri by viewModel.currentOutputUri.collectAsState()
 
         OutputLocationDialog(
             currentOutputUri = currentOutputUri,
             selectedUri = selectedOutputUri,
             onSelectCustomFolder = { folderPickerLauncher.launch(null) },
-            onClearCustomFolder = { selectedOutputUri = null },
-            onDismiss = { showOutputDialog = false },
+            onClearCustomFolder = { 
+                selectedOutputUri = null
+                dialogStep = 2
+                showOutputDialog = false
+            },
+            onDismiss = { 
+                showOutputDialog = false
+                selectedUris = emptyList()
+                dialogStep = 0
+            },
             onConfirm = {
                 viewModel.setCurrentOutputDirectory(selectedOutputUri)
                 showOutputDialog = false
-                pendingShowMethod = true
+                dialogStep = 2
             }
         )
     }
 
     if (showMethodDialog) {
         EncryptionMethodDialog(
-            onDismiss = { showMethodDialog = false },
+            onDismiss = { 
+                showMethodDialog = false
+                dialogStep = 1
+                showOutputDialog = true
+            },
             onConfirm = { method ->
                 selectedMethod = method
                 showMethodDialog = false
-                pendingShowPasswordFromMethod = true
+                dialogStep = 3
             }
         )
     }
@@ -469,9 +485,14 @@ private fun EncryptTabContent(
         PasswordDialog(
             uris = selectedUris,
             isFolder = selectedUris.size == 1 && selectedUris.first().path?.contains("tree") == true,
-            onDismiss = { showPasswordDialog = false },
+            onDismiss = { 
+                showPasswordDialog = false
+                dialogStep = 2
+                showMethodDialog = true
+            },
             onConfirm = { password, deleteOriginal ->
                 showPasswordDialog = false
+                dialogStep = 0
                 val isFolder = selectedUris.size == 1 && selectedUris.first().path?.contains("tree") == true
                 if (isFolder) {
                     viewModel.encryptFolderTree(selectedUris.first(), password, selectedMethod, deleteOriginal)
@@ -479,6 +500,7 @@ private fun EncryptTabContent(
                     viewModel.encryptFiles(selectedUris, password, selectedMethod, deleteOriginal)
                 }
                 val intentType = if (isFolder) "folder" else "files"
+                selectedUris = emptyList()
                 onNavigateToProgress(intentType)
             },
             showDeleteOption = true,
