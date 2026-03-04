@@ -42,7 +42,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,11 +64,19 @@ fun OutputLocationDialog(
     onSelectCustomFolder: () -> Unit,
     onClearCustomFolder: () -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: (Uri?) -> Unit
 ) {
     val context = LocalContext.current
-    val effectiveUri = selectedUri ?: currentOutputUri
-    val isCustomSelected = effectiveUri != null
+    val externalUri = selectedUri ?: currentOutputUri
+    // Internal state for tracking selection within the dialog
+    var isCustomSelected by remember { mutableStateOf(externalUri != null) }
+    var customFolderUri by remember { mutableStateOf<Uri?>(externalUri) }
+    
+    // Sync with external state when it changes
+    LaunchedEffect(externalUri) {
+        isCustomSelected = externalUri != null
+        customFolderUri = externalUri
+    }
 
     LaunchedEffect(Unit) {
         android.widget.Toast.makeText(context, "Choose where to save encrypted/decrypted files", android.widget.Toast.LENGTH_LONG).show()
@@ -153,19 +163,26 @@ fun OutputLocationDialog(
                             subtitle = "Save in the same directory as the original file",
                             icon = Icons.Outlined.Folder,
                             isSelected = !isCustomSelected,
-                            onClick = onClearCustomFolder
+                            onClick = { 
+                                isCustomSelected = false
+                                customFolderUri = null
+                            },
+                            showCheckmark = !isCustomSelected
                         )
 
                         // Option 2: Custom folder
                         LocationOptionCard(
                             title = "Choose Custom Folder",
-                            subtitle = effectiveUri?.let { 
+                            subtitle = customFolderUri?.let { 
                                 "Selected: ${it.lastPathSegment ?: "Custom folder"}" 
                             } ?: "Tap to select a specific folder",
                             icon = Icons.Default.FolderOpen,
                             isSelected = isCustomSelected,
-                            onClick = onSelectCustomFolder,
-                            showCheckmark = isCustomSelected
+                            onClick = {
+                                isCustomSelected = true
+                                onSelectCustomFolder()
+                            },
+                            showCheckmark = isCustomSelected && customFolderUri != null
                         )
 
                         // Info card
@@ -217,7 +234,9 @@ fun OutputLocationDialog(
                             }
 
                             Button(
-                                onClick = onConfirm,
+                                onClick = {
+                                    onConfirm(customFolderUri)
+                                },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.buttonColors(

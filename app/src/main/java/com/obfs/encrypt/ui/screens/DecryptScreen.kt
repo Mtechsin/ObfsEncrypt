@@ -113,18 +113,18 @@ fun DecryptScreen(
             currentOutputUri = currentOutputUri,
             selectedUri = selectedOutputUri,
             onSelectCustomFolder = { folderPickerLauncher.launch(null) },
-            onClearCustomFolder = { 
+            onClearCustomFolder = {
                 selectedOutputUri = null
                 dialogStep = 2
                 showOutputDialog = false
             },
-            onDismiss = { 
+            onDismiss = {
                 showOutputDialog = false
                 selectedUris = emptyList()
                 dialogStep = 0
             },
-            onConfirm = {
-                viewModel.setCurrentOutputDirectory(selectedOutputUri)
+            onConfirm = { uri ->
+                viewModel.setCurrentOutputDirectory(uri)
                 showOutputDialog = false
                 dialogStep = 2
             }
