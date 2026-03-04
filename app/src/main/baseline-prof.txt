@@ -1,0 +1,30 @@
+# Baseline Profile Rules for ObfsEncrypt
+# These rules ensure critical app code is compiled ahead-of-time for better performance
+
+Lcom/obfs/encrypt/MainActivity;
+Lcom/obfs/encrypt/ui/screens/HomeScreen;
+Lcom/obfs/encrypt/ui/screens/DeviceFoldersScreen;
+Lcom/obfs/encrypt/viewmodel/MainViewModel;
+Lcom/obfs/encrypt/viewmodel/FileManagerViewModel;
+Lcom/obfs/encrypt/crypto/EncryptionHelper;
+Lcom/obfs/encrypt/data/AppDirectoryManager;
+Lcom/obfs/encrypt/ui/navigation/AppNavigation;
+Lcom/obfs/encrypt/ui/theme/ObfsEncryptTheme;
+Lcom/obfs/encrypt/ui/components/*;
+Lcom/obfs/encrypt/performance/*;
+
+# Compose runtime
+Landroidx/compose/runtime/*;
+Landroidx/compose/ui/*;
+Landroidx/compose/material3/*;
+
+# Kotlin coroutines
+Lkotlinx/coroutines/*;
+
+# Hilt dependency injection
+Ldagger/hilt/*;
+Lcom/google/dagger/hilt/*;
+
+# Coil image loading
+Lcoil/*;
+Lcoil/compose/*;
