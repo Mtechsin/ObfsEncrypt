@@ -7,18 +7,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,17 +22,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,7 +43,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import android.util.Log
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -62,28 +54,33 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil.compose.AsyncImage
+import com.obfs.encrypt.R
 import com.obfs.encrypt.crypto.EncryptionMethod
 import com.obfs.encrypt.ui.components.FileFilter
 import com.obfs.encrypt.ui.components.FileFilterChips
 import com.obfs.encrypt.ui.components.FilePathBreadcrumb
+import com.obfs.encrypt.ui.components.FilePreviewSheet
 import com.obfs.encrypt.ui.components.FileSearchBar
+import com.obfs.encrypt.ui.components.BatchOperationsMenu
+import com.obfs.encrypt.ui.components.FolderPickerDialog
+import com.obfs.encrypt.ui.components.DeleteConfirmationDialog
 import com.obfs.encrypt.ui.components.QuickAccessSection
+import com.obfs.encrypt.ui.components.SortOptionsDropdown
 import com.obfs.encrypt.ui.components.optimized.OptimizedFileList
 import com.obfs.encrypt.ui.components.shouldIncludeFile
+import com.obfs.encrypt.ui.utils.rememberHapticFeedback
 import com.obfs.encrypt.viewmodel.FileItem
 import com.obfs.encrypt.viewmodel.FileManagerViewModel
 import com.obfs.encrypt.viewmodel.MainViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +92,7 @@ fun FileBrowserScreen(
     fileManagerViewModel: FileManagerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val haptic = rememberHapticFeedback()
 
     var hasPermission by remember {
         mutableStateOf(
@@ -113,34 +111,47 @@ fun FileBrowserScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedFilter by rememberSaveable { mutableStateOf(FileFilter.ALL) }
     val quickAccessExpanded by viewModel.quickAccessExpanded.collectAsState()
+    val favoritePaths by fileManagerViewModel.favoritePaths.collectAsState()
+    var searchSubfolders by rememberSaveable { mutableStateOf(false) }
+    var searchResults by remember { mutableStateOf<List<FileItem>?>(null) }
     val scope = rememberCoroutineScope()
 
     val selectedItems by fileManagerViewModel.selectedItems.collectAsState()
     val currentDirectory by fileManagerViewModel.currentDirectory.collectAsState()
     val filesAndFolders by fileManagerViewModel.filesAndFolders.collectAsState()
     val isLoading by fileManagerViewModel.isLoading.collectAsState()
-    
+    val sortOrder by fileManagerViewModel.sortOrder.collectAsState()
+    val sortAscending by fileManagerViewModel.sortAscending.collectAsState()
+
     val isDecryptionMode by remember {
         derivedStateOf {
             selectedItems.isNotEmpty() && selectedItems.all { it.name.endsWith(".obfs", ignoreCase = true) }
         }
     }
-    
+
     var showPasswordDialog by remember { mutableStateOf(false) }
     var showMethodDialog by remember { mutableStateOf(false) }
-    
+
     // Use a timestamped trigger to guarantee recomposition on every click
     var showOutputDialogTrigger by remember { mutableStateOf<Long?>(null) }
-    
+
     var selectedMethod by remember { mutableStateOf(EncryptionMethod.STANDARD) }
     var pendingShowDialog by remember { mutableStateOf<String?>(null) }
     var pendingShowPasswordFromMethod by remember { mutableStateOf(false) }
     var selectedOutputUri by remember { mutableStateOf<Uri?>(null) }
 
+    // Batch operation states
+    var showCopyMoveDialog by remember { mutableStateOf<String?>(null) } // "copy" or "move"
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val batchOperationResult by fileManagerViewModel.batchOperationResult.collectAsState()
+
+    // File preview state
+    var previewFileItem by remember { mutableStateOf<FileItem?>(null) }
+
     // Handle dialog sequencing to avoid race conditions
     LaunchedEffect(pendingShowDialog) {
         pendingShowDialog?.let { dialog ->
-            kotlinx.coroutines.delay(100) // Delay to allow OutputLocationDialog to fully dismiss
+            delay(100) // Delay to allow OutputLocationDialog to fully dismiss
             when (dialog) {
                 "password" -> showPasswordDialog = true
                 "method" -> showMethodDialog = true
@@ -152,7 +163,7 @@ fun FileBrowserScreen(
     // Handle transition from MethodDialog to PasswordDialog
     LaunchedEffect(pendingShowPasswordFromMethod) {
         if (pendingShowPasswordFromMethod) {
-            kotlinx.coroutines.delay(100) // Delay to allow EncryptionMethodDialog to fully dismiss
+            delay(100) // Delay to allow EncryptionMethodDialog to fully dismiss
             showPasswordDialog = true
             pendingShowPasswordFromMethod = false
         }
@@ -227,6 +238,12 @@ fun FileBrowserScreen(
         }
     }
 
+    val shareLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        // Share completed
+    }
+
 
     
     // Dialogs moved inside Scaffold for reliability
@@ -239,7 +256,7 @@ fun FileBrowserScreen(
                 title = {
                     if (!showSearch) {
                         Text(
-                            text = "Browse Files",
+                            text = stringResource(R.string.browse_files),
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center
@@ -248,27 +265,47 @@ fun FileBrowserScreen(
                 },
                 navigationIcon = {
                     if (showSearch) {
-                        IconButton(onClick = { 
-                            showSearch = false
-                            searchQuery = ""
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        IconButton(
+                            onClick = {
+                                haptic.click()
+                                showSearch = false
+                                searchQuery = ""
+                            }
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                         }
                     } else {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        IconButton(
+                            onClick = {
+                                haptic.click()
+                                onNavigateBack()
+                            }
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                         }
                     }
                 },
                 actions = {
                     if (!showSearch) {
-                        IconButton(onClick = { showSearch = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        IconButton(
+                            onClick = {
+                                haptic.click()
+                                showSearch = true
+                            }
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search))
                         }
+                        SortOptionsDropdown(
+                            currentSortOrder = sortOrder,
+                            currentSortAscending = sortAscending,
+                            onSortOrderChange = { fileManagerViewModel.setSortOrder(it) },
+                            onSortAscendingToggle = { fileManagerViewModel.toggleSortAscending() }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                 ),
                 windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
                 modifier = Modifier.padding(horizontal = 8.dp)
@@ -300,24 +337,53 @@ fun FileBrowserScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "${selectedItems.size} selected",
+                                    text = stringResource(R.string.items_selected, selectedItems.size),
                                     fontWeight = FontWeight.Bold,
                                     style = MaterialTheme.typography.titleMedium
                                 )
                                 Text(
-                                    text = if (isDecryptionMode) "Ready to decrypt" else "Ready to encrypt",
+                                    text = if (isDecryptionMode) stringResource(R.string.ready_to_decrypt) else stringResource(R.string.ready_to_encrypt),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TextButton(
-                                    onClick = { fileManagerViewModel.clearSelection() }
+                                    onClick = {
+                                        haptic.click()
+                                        fileManagerViewModel.clearSelection()
+                                    }
                                 ) {
-                                    Text("Cancel")
+                                    Text(stringResource(R.string.cancel))
                                 }
+                                // Batch operations menu
+                                BatchOperationsMenu(
+                                    onCopy = {
+                                        haptic.click()
+                                        showCopyMoveDialog = "copy"
+                                    },
+                                    onMove = {
+                                        haptic.click()
+                                        showCopyMoveDialog = "move"
+                                    },
+                                    onDelete = {
+                                        haptic.click()
+                                        showDeleteConfirm = true
+                                    },
+                                    onShare = {
+                                        haptic.click()
+                                        val shareIntent = fileManagerViewModel.batchShare(
+                                            selectedItems.toList(),
+                                            context
+                                        )
+                                        shareIntent?.let {
+                                            shareLauncher.launch(Intent.createChooser(it, "Share files"))
+                                        }
+                                    }
+                                )
                                 Button(
                                     onClick = {
+                                        haptic.heavyClick()
                                         val trigger = System.currentTimeMillis()
                                         Log.d("FileBrowserScreen", "Button clicked! Generating new trigger: $trigger")
                                         showOutputDialogTrigger = trigger
@@ -334,7 +400,7 @@ fun FileBrowserScreen(
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(if (isDecryptionMode) "Decrypt" else "Encrypt", fontWeight = FontWeight.Bold)
+                                    Text(if (isDecryptionMode) stringResource(R.string.decrypt) else stringResource(R.string.encrypt), fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -351,8 +417,32 @@ fun FileBrowserScreen(
             if (showSearch) {
                 FileSearchBar(
                     query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    onSearch = { },
+                    onQueryChange = { 
+                        searchQuery = it
+                        searchResults = null
+                    },
+                    onSearch = { 
+                        if (it.isNotBlank()) {
+                            fileManagerViewModel.searchFiles(
+                                query = it,
+                                searchSubfolders = searchSubfolders
+                            ) { results ->
+                                searchResults = results
+                            }
+                        }
+                    },
+                    searchSubfolders = searchSubfolders,
+                    onSearchSubfoldersChange = { 
+                        searchSubfolders = it
+                        if (searchQuery.isNotBlank()) {
+                            fileManagerViewModel.searchFiles(
+                                query = searchQuery,
+                                searchSubfolders = it
+                            ) { results ->
+                                searchResults = results
+                            }
+                        }
+                    },
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
             } else {
@@ -360,19 +450,21 @@ fun FileBrowserScreen(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.TopCenter
                 ) {
-                    QuickAccessSection(
-                        favoritePaths = emptySet(),
-                        onFolderClick = { path ->
-                            fileManagerViewModel.navigateToPath(path)
-                        },
-                        onFavoriteClick = { path ->
-                            scope.launch {
-                            }
-                        },
-                        isExpanded = quickAccessExpanded,
-                        onToggleExpand = { viewModel.setQuickAccessExpanded(!quickAccessExpanded) },
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
+                    Column {
+                        // Quick Access Section
+                        QuickAccessSection(
+                            favoritePaths = favoritePaths,
+                            onFolderClick = { path ->
+                                fileManagerViewModel.navigateToPath(path)
+                            },
+                            onFavoriteClick = { path ->
+                                fileManagerViewModel.toggleFavorite(path)
+                            },
+                            isExpanded = quickAccessExpanded,
+                            onToggleExpand = { viewModel.setQuickAccessExpanded(!quickAccessExpanded) },
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -403,28 +495,56 @@ fun FileBrowserScreen(
                 )
             }
             
+            val displayFiles = if (showSearch && searchResults != null) {
+                // Show search results
+                val results = searchResults!!
+                if (selectedFilter != FileFilter.ALL) {
+                    results.filter { item ->
+                        shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
+                    }
+                } else {
+                    results
+                }
+            } else {
+                // Show filtered files from current directory
+                filteredFiles
+            }
+
             OptimizedFileList(
-                filesAndFolders = filteredFiles,
+                filesAndFolders = displayFiles,
                 selectedItems = selectedItems,
                 isLoading = isLoading,
+                favoritePaths = favoritePaths,
                 onFileClick = { item ->
+                    haptic.click()
                     if (item.isDirectory) {
                         fileManagerViewModel.navigateTo(item.file)
                     } else {
+                        // Click on name/row selects the file
                         fileManagerViewModel.toggleSelection(item.file)
                     }
                 },
                 onFileLongClick = { item ->
+                    haptic.heavyClick()
                     if (!item.isDirectory) {
                         fileManagerViewModel.toggleSelection(item.file)
                     }
                 },
+                onFilePreview = { item ->
+                    // Click on image thumbnail opens preview
+                    haptic.click()
+                    previewFileItem = item
+                },
                 onToggleSelect = { file ->
+                    haptic.click()
                     fileManagerViewModel.toggleSelection(file)
                 },
                 onSelectAll = { fileManagerViewModel.selectAll() },
                 onClearSelection = { fileManagerViewModel.clearSelection() },
                 onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
+                onToggleFavorite = { path ->
+                    fileManagerViewModel.toggleFavorite(path)
+                },
                 modifier = Modifier.weight(1f)
             )
 
@@ -479,6 +599,59 @@ fun FileBrowserScreen(
             viewModel = viewModel
         )
     }
+
+    // Copy/Move destination picker dialog
+    if (showCopyMoveDialog != null) {
+        FolderPickerDialog(
+            title = if (showCopyMoveDialog == "copy") "Copy to..." else "Move to...",
+            currentDirectory = currentDirectory,
+            onDismiss = { showCopyMoveDialog = null },
+            onConfirm = { destinationDir ->
+                showCopyMoveDialog = null
+                val selectedFiles = selectedItems.toList()
+                if (showCopyMoveDialog == "copy") {
+                    fileManagerViewModel.batchCopy(selectedFiles, destinationDir)
+                } else {
+                    fileManagerViewModel.batchMove(selectedFiles, destinationDir)
+                }
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteConfirm) {
+        DeleteConfirmationDialog(
+            fileCount = selectedItems.size,
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                showDeleteConfirm = false
+                fileManagerViewModel.batchDelete(selectedItems.toList())
+            }
+        )
+    }
+
+    // Batch operation result snackbar
+    LaunchedEffect(batchOperationResult) {
+        batchOperationResult?.let { result ->
+            // Show result (could be enhanced with Snackbar)
+            Log.d("FileBrowserScreen", "Batch operation result: ${result.message}")
+            fileManagerViewModel.clearBatchOperationResult()
+        }
+    }
+
+    // File preview sheet
+    previewFileItem?.let { file ->
+        FilePreviewSheet(
+            fileItem = file,
+            onDismiss = { previewFileItem = null }
+        )
+    }
+}
+
+private fun isTextFile(fileName: String): Boolean {
+    val textExtensions = listOf("txt", "md", "json", "xml", "html", "htm", "csv", "log", "java", "kt", "js", "ts", "py", "cpp", "c", "h", "css", "scss", "yaml", "yml", "toml", "ini", "cfg", "conf", "sh", "bat", "ps1", "sql", "php", "rb", "go", "rs", "swift")
+    val extension = fileName.substringAfterLast('.', "").lowercase()
+    return extension in textExtensions
 }
 
 
@@ -487,24 +660,25 @@ private fun FileBrowserPermissionRequest(onRequest: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Storage Access Required",
+            text = stringResource(R.string.storage_access_required),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Grant storage permission to browse files",
+            text = stringResource(R.string.grant_permission_browse),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onRequest) {
-            Text("Grant Permission")
+            Text(stringResource(R.string.grant_permission))
         }
     }
 }

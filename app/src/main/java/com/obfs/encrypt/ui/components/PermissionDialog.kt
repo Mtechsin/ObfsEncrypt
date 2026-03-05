@@ -29,10 +29,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-
+import com.obfs.encrypt.R
 import com.obfs.encrypt.ui.theme.pressClickEffect
 
 /**
@@ -60,7 +60,7 @@ fun PermissionDialog(
         },
         title = {
             Text(
-                text = "Storage Access Required",
+                text = stringResource(R.string.storage_access_required),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -70,36 +70,36 @@ fun PermissionDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = "Obfs Encrypt needs access to your device storage to encrypt and decrypt files.",
+                    text = stringResource(R.string.storage_access_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 
                 PermissionFeatureItem(
                     icon = Icons.Default.Folder,
-                    title = "Access Files",
-                    description = "Select and read files to encrypt"
+                    title = stringResource(R.string.access_files),
+                    description = stringResource(R.string.access_files_description)
                 )
                 
                 PermissionFeatureItem(
                     icon = Icons.Default.Lock,
-                    title = "Save Encrypted Files",
-                    description = "Write encrypted files to your chosen location"
+                    title = stringResource(R.string.save_encrypted_files),
+                    description = stringResource(R.string.save_encrypted_files_description)
                 )
                 
                 PermissionFeatureItem(
                     icon = Icons.Default.Storage,
-                    title = "Manage Output Folder",
-                    description = "Create and manage the ObfsEncrypt output directory"
+                    title = stringResource(R.string.manage_output_folder),
+                    description = stringResource(R.string.manage_output_folder_description)
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 Text(
                     text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        "Tap \"Grant Permission\" to open settings and enable \"Allow management of all files\"."
+                        stringResource(R.string.grant_permission_settings)
                     } else {
-                        "Tap \"Grant Permission\" to allow file access."
+                        stringResource(R.string.grant_permission_allow)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
@@ -119,7 +119,7 @@ fun PermissionDialog(
                     contentDescription = null,
                     modifier = Modifier.padding(end = 8.dp)
                 )
-                Text("Grant Permission", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.grant_permission), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -130,7 +130,7 @@ fun PermissionDialog(
                         .fillMaxWidth()
                         .pressClickEffect()
                 ) {
-                    Text("Later")
+                    Text(stringResource(R.string.later))
                 }
             }
         }
@@ -196,7 +196,7 @@ fun PermissionGrantedDialog(
         },
         title = {
             Text(
-                text = "Permission Granted!",
+                text = stringResource(R.string.permission_granted),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -206,7 +206,7 @@ fun PermissionGrantedDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Storage access has been granted. Your encrypted files will be saved here:",
+                    text = stringResource(R.string.permission_granted_description),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 
@@ -225,7 +225,7 @@ fun PermissionGrantedDialog(
                 }
                 
                 Text(
-                    text = "You can change this location in Settings.",
+                    text = stringResource(R.string.change_location_settings),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -238,7 +238,7 @@ fun PermissionGrantedDialog(
                     .fillMaxWidth()
                     .pressClickEffect()
             ) {
-                Text("Continue", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.continue_btn), fontWeight = FontWeight.Bold)
             }
         }
     )

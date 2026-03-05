@@ -1,8 +1,6 @@
 package com.obfs.encrypt.ui.screens
 
-import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -46,11 +44,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import com.obfs.encrypt.R
 import com.obfs.encrypt.ui.theme.Motion
 import com.obfs.encrypt.ui.theme.pressClickEffect
 import com.obfs.encrypt.viewmodel.MainViewModel
@@ -96,14 +94,14 @@ fun ProgressScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "Progress",
+                        stringResource(R.string.progress),
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.titleLarge
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -172,13 +170,13 @@ fun ProgressScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            androidx.compose.animation.AnimatedVisibility(
+            AnimatedVisibility(
                 visible = progress >= 1f && !isActive && !statusMessage.startsWith("Error", ignoreCase = true),
                 enter = fadeIn() + scaleIn(initialScale = 0.9f)
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "Success!",
+                        text = stringResource(R.string.success),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
@@ -198,18 +196,18 @@ fun ProgressScreen(
                             .pressClickEffect(),
                         shape = MaterialTheme.shapes.large
                     ) {
-                        Text("Return Home", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.return_home), fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            androidx.compose.animation.AnimatedVisibility(
+            AnimatedVisibility(
                 visible = !isActive && statusMessage.startsWith("Error", ignoreCase = true),
                 enter = fadeIn() + scaleIn(initialScale = 0.9f)
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "Failed",
+                        text = stringResource(R.string.failed),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.error
@@ -234,12 +232,12 @@ fun ProgressScreen(
                             .pressClickEffect(),
                         shape = MaterialTheme.shapes.large
                     ) {
-                        Text("Return Home", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.return_home), fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            androidx.compose.animation.AnimatedVisibility(
+            AnimatedVisibility(
                 visible = isActive,
                 enter = fadeIn(),
                 exit = fadeOut()
@@ -289,11 +287,10 @@ fun ProgressScreen(
                         shape = MaterialTheme.shapes.large
                     ) {
                         Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                        Text("Cancel Operation", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.cancel_operation), fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
-}
-}
+}}

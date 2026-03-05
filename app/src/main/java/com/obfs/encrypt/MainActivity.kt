@@ -8,15 +8,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -27,13 +25,20 @@ import com.obfs.encrypt.performance.CoilImageLoader
 import com.obfs.encrypt.performance.MemoryManager
 import com.obfs.encrypt.performance.MemoryManager.Companion.isMemoryLow
 import com.obfs.encrypt.performance.memoryManager
+import com.obfs.encrypt.ui.components.BiometricAuthDialog
 import com.obfs.encrypt.ui.components.PermissionDialog
 import com.obfs.encrypt.ui.components.PermissionGrantedDialog
+import androidx.activity.viewModels
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.obfs.encrypt.ui.navigation.AppNavigation
 import com.obfs.encrypt.ui.screens.AppDirectoryManagerInstanceHolder
 import com.obfs.encrypt.ui.theme.ObfsEncryptTheme
+import com.obfs.encrypt.ui.utils.LanguageManager
+import com.obfs.encrypt.security.AppLockManager
+import com.obfs.encrypt.security.BiometricAuthManager
 import com.obfs.encrypt.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -43,12 +48,19 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var appDirectoryManager: AppDirectoryManager
 
-    private var mainViewModel: MainViewModel? = null
+    @Inject
+    lateinit var appLockManager: AppLockManager
+
+    @Inject
+    lateinit var biometricAuthManager: BiometricAuthManager
+
     private lateinit var memoryManager: MemoryManager
+    private val mainViewModel: MainViewModel by viewModels()
 
     var hasPermission by mutableStateOf(false)
     var showPermissionDialog by mutableStateOf(false)
     var showPermissionGrantedDialog by mutableStateOf(false)
+    var showBiometricDialog by mutableStateOf(false)
     var outputFolderPath by mutableStateOf("")
     
     private val permissionLauncher = registerForActivityResult(
@@ -65,12 +77,24 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Apply saved language preference
+        lifecycleScope.launch {
+            val settingsRepository = (application as ObfsApp).settingsRepository
+            val language = settingsRepository.language.first()
+            if (language != "system") {
+                LanguageManager.applyLocale(this@MainActivity, language)
+            }
+        }
+
+        // Initialize app lock manager
+        appLockManager.init()
+
         // Enable edge-to-edge display for modern Android
         enableEdgeToEdge()
 
         // Initialize memory manager for automatic memory optimization
         memoryManager = application.memoryManager
-        
+
         // Register memory trim callbacks for cache cleanup
         memoryManager.registerTrimCallback { level ->
             when (level) {
@@ -98,12 +122,38 @@ class MainActivity : AppCompatActivity() {
             outputFolderPath = appDirectoryManager.getOutputDirectoryPath()
         }
 
+        // Observe app lock state
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                appLockManager.isLocked.collect { isLocked ->
+                    showBiometricDialog = isLocked
+                }
+            }
+        }
+
+        // Observe language changes
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                mainViewModel.language.collect { language ->
+                    if (language != "system") {
+                        LanguageManager.applyLocale(this@MainActivity, language)
+                    }
+                }
+            }
+        }
+
         setContent {
-            ObfsEncryptTheme {
+            val themeMode by mainViewModel.themeMode.collectAsState()
+            val appTheme by mainViewModel.appTheme.collectAsState()
+            val dynamicColor by mainViewModel.dynamicColor.collectAsState()
+
+            ObfsEncryptTheme(
+                themeMode = themeMode,
+                appTheme = appTheme,
+                dynamicColor = dynamicColor
+            ) {
                 Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .windowInsetsPadding(WindowInsets.safeDrawing),
+                    modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     AppNavigation()
@@ -139,6 +189,19 @@ class MainActivity : AppCompatActivity() {
                         outputFolderPath = outputFolderPath,
                         onContinue = {
                             showPermissionGrantedDialog = false
+                        }
+                    )
+                }
+
+                if (showBiometricDialog && biometricAuthManager.isBiometricAvailable()) {
+                    BiometricAuthDialog(
+                        biometricAuthManager = biometricAuthManager,
+                        appLockManager = appLockManager,
+                        onDismiss = {
+                            showBiometricDialog = false
+                        },
+                        onAuthSuccess = {
+                            showBiometricDialog = false
                         }
                     )
                 }

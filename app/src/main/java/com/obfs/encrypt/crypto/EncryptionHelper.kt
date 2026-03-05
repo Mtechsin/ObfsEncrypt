@@ -4,6 +4,7 @@ import android.net.Uri
 import android.util.Log
 import com.lambdapioneer.argon2kt.Argon2Kt
 import com.lambdapioneer.argon2kt.Argon2Mode
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -30,6 +31,21 @@ import kotlinx.coroutines.withContext
  * is independently encrypted with AES-256-GCM using its own nonce (base_nonce XOR chunk_index).
  * Each encrypted chunk is prefixed by a 4-byte big-endian length so the decryptor knows
  * exactly how many bytes to read for each chunk.
+ *
+ * FILE FORMAT (OBFSv4):
+ *   [6 bytes]  magic   = "OBFSv4"
+ *   [16 bytes] argon2 salt
+ *   [12 bytes] base nonce
+ *   [1 byte]  encryption method ordinal (0=FAST, 1=STANDARD, 2=STRONG)
+ *   [1 byte]  integrity check enabled flag
+ *   [1 byte]  header HMAC enabled flag (always 1 for v4)
+ *   [32 bytes] HMAC-SHA256 of header (for tamper detection)
+ *   [N chunks] each chunk:
+ *       [4 bytes] big-endian ciphertext length (including 16-byte GCM tag)
+ *       [M bytes] AES-GCM ciphertext + tag
+ *   [if integrity check enabled:]
+ *       [32 bytes] SHA-256 checksum of plaintext
+ *       [32 bytes] HMAC-SHA256 of checksum
  *
  * FILE FORMAT (OBFSv3):
  *   [6 bytes]  magic   = "OBFSv3"
@@ -59,18 +75,20 @@ class EncryptionHelper {
     private val argon2Kt = Argon2Kt()
 
     companion object {
-        const val MAGIC_HEADER = "OBFSv3"
+        const val MAGIC_HEADER = "OBFSv4"  // Updated to v4 with header HMAC
+        const val MAGIC_HEADER_V3 = "OBFSv3"
         const val MAGIC_HEADER_V2 = "OBFSv2"
         const val SALT_LENGTH = 16
         const val NONCE_LENGTH = 12
         const val METHOD_LENGTH = 1
         const val GCM_TAG_LENGTH = 128 // bits
         const val CHUNK_SIZE = 1 * 1024 * 1024 // 1 MB per chunk — safe for GCM buffering
-        
+
         // Integrity verification constants
         const val SHA256_CHECKSUM_LENGTH = 32
         const val HMAC_SHA256_LENGTH = 32
-        
+        const val HEADER_HMAC_LENGTH = 32
+
         // Keyfile constants
         const val KEYFILE_MIN_SIZE = 16
         const val KEYFILE_MAX_SIZE = 1024 * 1024 // 1MB max keyfile size
@@ -260,21 +278,28 @@ class EncryptionHelper {
             }
             val secretKey = SecretKeySpec(key, "AES")
 
-            // Write file header
-            outputStream.write(MAGIC_HEADER.toByteArray(Charsets.UTF_8)) // 6 bytes
-            outputStream.write(salt)                                       // 16 bytes
-            outputStream.write(baseNonce)                                  // 12 bytes
-            outputStream.write(method.ordinal)                             // 1 byte
-            
-            // Write integrity check flag (1 byte)
-            outputStream.write(if (enableIntegrityCheck) 1 else 0)
+            // Build header data for HMAC computation
+            val headerData = ByteArrayOutputStream()
+            headerData.write(MAGIC_HEADER.toByteArray(Charsets.UTF_8)) // 6 bytes
+            headerData.write(salt)                                       // 16 bytes
+            headerData.write(baseNonce)                                  // 12 bytes
+            headerData.write(method.ordinal)                             // 1 byte
+            headerData.write(if (enableIntegrityCheck) 1 else 0)        // 1 byte
+            headerData.write(1) // Header HMAC enabled flag (always 1 for v4)
+
+            // Compute HMAC of header data
+            val headerHmac = computeHmac(headerData.toByteArray(), key)
+
+            // Write header + HMAC
+            outputStream.write(headerData.toByteArray())
+            outputStream.write(headerHmac) // 32 bytes
 
             val fileSize = if (totalSize > 0) totalSize else null
             val startTime = System.currentTimeMillis()
             var totalBytesRead = 0L
             var chunkIndex = 0L
             var lastUpdateTime = startTime
-            
+
             // For integrity check, collect all plaintext to compute hash after encryption
             val integrityData = if (enableIntegrityCheck) {
                 java.io.ByteArrayOutputStream()
@@ -298,7 +323,7 @@ class EncryptionHelper {
                 val lenBytes = ByteBuffer.allocate(4).putInt(cipherChunk.size).array()
                 outputStream.write(lenBytes)
                 outputStream.write(cipherChunk)
-                
+
                 // Store plaintext for integrity check
                 integrityData?.write(plainBuf, 0, bytesRead)
 
@@ -312,16 +337,16 @@ class EncryptionHelper {
                     lastUpdateTime = currentTime
                 }
             }
-            
+
             // Write integrity check if enabled
             if (enableIntegrityCheck && integrityData != null) {
                 val plaintextData = integrityData.toByteArray()
                 val checksum = computeChecksum(plaintextData)
                 val hmac = computeHmac(checksum, key)
-                
+
                 outputStream.write(checksum)
                 outputStream.write(hmac)
-                
+
                 // Clear sensitive data
                 plaintextData.fill(0)
                 integrityData.reset()
@@ -329,6 +354,7 @@ class EncryptionHelper {
 
             outputStream.flush()
             Arrays.fill(key, 0.toByte())
+            headerData.close()
 
             val finalSize = fileSize ?: totalBytesRead
             progressCallback(finalSize, finalSize, startTime)
@@ -358,9 +384,12 @@ class EncryptionHelper {
             inputStream.read(magicBuffer)
             val magic = String(magicBuffer, Charsets.UTF_8)
 
+            val isV4Format = magic == MAGIC_HEADER
+            val isV3Format = magic == MAGIC_HEADER_V3
             val isV2Format = magic == MAGIC_HEADER_V2
-            if (magic != MAGIC_HEADER && !isV2Format) {
-                throw IllegalArgumentException("Invalid file format. Expected OBFSv3 header but got: $magic")
+            
+            if (!isV4Format && !isV3Format && !isV2Format) {
+                throw IllegalArgumentException("Invalid file format. Expected OBFSv3/v4 header but got: $magic")
             }
 
             val salt = ByteArray(SALT_LENGTH)
@@ -369,7 +398,7 @@ class EncryptionHelper {
             val baseNonce = ByteArray(NONCE_LENGTH)
             readFully(inputStream, baseNonce)
 
-            // Read encryption method from header (v3 format only)
+            // Read encryption method from header (v3/v4 format only)
             val storedMethod = if (isV2Format) {
                 EncryptionMethod.STANDARD
             } else {
@@ -380,12 +409,29 @@ class EncryptionHelper {
                 EncryptionMethod.entries[methodByte]
             }
 
-            // Read integrity check flag (v3 format only)
+            // Read integrity check flag (v3/v4 format only)
             val hasIntegrityCheck = if (isV2Format) {
                 false
             } else {
                 val flag = inputStream.read()
                 flag == 1
+            }
+
+            // Read and verify header HMAC (v4 format only)
+            var storedHmac: ByteArray? = null
+            val hasHeaderHmac = if (isV4Format) {
+                val headerHmacFlag = inputStream.read()
+                if (headerHmacFlag != 1) {
+                    Log.w("EncryptionHelper", "V4 file without header HMAC flag set")
+                }
+                
+                // Read stored HMAC
+                storedHmac = ByteArray(HEADER_HMAC_LENGTH)
+                readFully(inputStream, storedHmac!!)
+                
+                true // Header HMAC is present and will be verified after key derivation
+            } else {
+                false
             }
 
             // Derive key (Argon2 — slow by design, or from keyfile)
@@ -395,6 +441,24 @@ class EncryptionHelper {
                 deriveKey(password, salt, storedMethod)
             }
             val secretKey = SecretKeySpec(key, "AES")
+
+            // Verify header HMAC for v4 format
+            if (isV4Format && hasHeaderHmac && storedHmac != null) {
+                val headerData = ByteArrayOutputStream()
+                headerData.write(magicBuffer)
+                headerData.write(salt)
+                headerData.write(baseNonce)
+                headerData.write(storedMethod.ordinal)
+                headerData.write(if (hasIntegrityCheck) 1 else 0)
+                headerData.write(1)
+                
+                val computedHmac = computeHmac(headerData.toByteArray(), key)
+                headerData.close()
+                
+                if (!java.security.MessageDigest.isEqual(computedHmac, storedHmac)) {
+                    throw SecurityException("Header HMAC verification failed - file may be tampered or incorrect password")
+                }
+            }
 
             val fileSize = if (totalSize > 0) totalSize else null
             val startTime = System.currentTimeMillis()

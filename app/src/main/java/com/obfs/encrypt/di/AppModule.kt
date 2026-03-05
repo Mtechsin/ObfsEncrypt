@@ -1,10 +1,13 @@
 package com.obfs.encrypt.di
 
+import android.app.Application
 import android.app.NotificationManager
 import android.content.Context
 import com.obfs.encrypt.crypto.EncryptionHelper
 import com.obfs.encrypt.data.AppDirectoryManager
+import com.obfs.encrypt.data.EncryptionHistoryRepository
 import com.obfs.encrypt.data.SettingsRepository
+import com.obfs.encrypt.security.AppLockManager
 import com.obfs.encrypt.security.BiometricAuthManager
 import dagger.Module
 import dagger.Provides
@@ -48,6 +51,14 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideEncryptionHistoryRepository(
+        @ApplicationContext context: Context
+    ): EncryptionHistoryRepository {
+        return EncryptionHistoryRepository(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideNotificationManager(
         @ApplicationContext context: Context
     ): NotificationManager {
@@ -60,5 +71,14 @@ object AppModule {
         @ApplicationContext context: Context
     ): BiometricAuthManager {
         return BiometricAuthManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAppLockManager(
+        application: Application,
+        settingsRepository: SettingsRepository
+    ): AppLockManager {
+        return AppLockManager(application, settingsRepository)
     }
 }

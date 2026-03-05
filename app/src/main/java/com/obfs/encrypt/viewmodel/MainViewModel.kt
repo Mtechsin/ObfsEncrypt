@@ -9,9 +9,14 @@ import com.obfs.encrypt.crypto.DecryptionResult
 import com.obfs.encrypt.crypto.EncryptionHelper
 import com.obfs.encrypt.crypto.EncryptionMethod
 import com.obfs.encrypt.data.AppDirectoryManager
+import com.obfs.encrypt.data.EncryptionHistoryItem
+import com.obfs.encrypt.data.EncryptionHistoryRepository
 import com.obfs.encrypt.data.SecureDelete
 import com.obfs.encrypt.data.SettingsRepository
+import com.obfs.encrypt.data.createHistoryItem
+import com.obfs.encrypt.data.formatFileSize
 import com.obfs.encrypt.security.BiometricAuthManager
+import com.obfs.encrypt.ui.theme.AppTheme
 import com.obfs.encrypt.ui.theme.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
@@ -21,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @HiltViewModel
@@ -29,6 +35,7 @@ class MainViewModel @Inject constructor(
     private val encryptionHelper: EncryptionHelper,
     private val settingsRepository: SettingsRepository,
     private val appDirectoryManager: AppDirectoryManager,
+    private val historyRepository: EncryptionHistoryRepository,
     val biometricAuthManager: BiometricAuthManager
 ) : AndroidViewModel(application) {
 
@@ -50,20 +57,48 @@ class MainViewModel @Inject constructor(
     private val _themeMode = MutableStateFlow(ThemeMode.SYSTEM)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
+    private val _appTheme = MutableStateFlow(AppTheme.DEFAULT)
+    val appTheme: StateFlow<AppTheme> = _appTheme.asStateFlow()
+
+    private val _dynamicColor = MutableStateFlow(false)
+    val dynamicColor: StateFlow<Boolean> = _dynamicColor.asStateFlow()
+
     private val _quickAccessExpanded = MutableStateFlow(true)
     val quickAccessExpanded: StateFlow<Boolean> = _quickAccessExpanded.asStateFlow()
 
     // Keyfile support
     private val _keyfileUri = MutableStateFlow<Uri?>(null)
     val keyfileUri: StateFlow<Uri?> = _keyfileUri.asStateFlow()
-    
+
     // Integrity check preference
     private val _enableIntegrityCheck = MutableStateFlow(false)
     val enableIntegrityCheck: StateFlow<Boolean> = _enableIntegrityCheck.asStateFlow()
-    
+
     // Decryption result with integrity info
     private val _lastDecryptionResult = MutableStateFlow<DecryptionResult?>(null)
     val lastDecryptionResult: StateFlow<DecryptionResult?> = _lastDecryptionResult.asStateFlow()
+
+    // App lock settings
+    private val _appLockEnabled = MutableStateFlow(false)
+    val appLockEnabled: StateFlow<Boolean> = _appLockEnabled.asStateFlow()
+
+    private val _appLockTimeout = MutableStateFlow(0L)
+    val appLockTimeout: StateFlow<Long> = _appLockTimeout.asStateFlow()
+
+    // Language setting
+    private val _language = MutableStateFlow("system")
+    val language: StateFlow<String> = _language.asStateFlow()
+
+    // Encryption history
+    private val _encryptionHistory = MutableStateFlow<List<EncryptionHistoryItem>>(emptyList())
+    val encryptionHistory: StateFlow<List<EncryptionHistoryItem>> = _encryptionHistory.asStateFlow()
+
+    // Biometric password save prompt (shown after successful encryption)
+    private val _showPasswordSavePrompt = MutableStateFlow(false)
+    val showPasswordSavePrompt: StateFlow<Boolean> = _showPasswordSavePrompt.asStateFlow()
+
+    // Temporary password storage for pending save
+    private var pendingPasswordToSave: CharArray? = null
 
     private var currentJob: Job? = null
 
@@ -84,8 +119,38 @@ class MainViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            settingsRepository.appTheme.collect { theme ->
+                _appTheme.value = theme
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.dynamicColor.collect { enabled ->
+                _dynamicColor.value = enabled
+            }
+        }
+        viewModelScope.launch {
             settingsRepository.quickAccessExpanded.collect { expanded ->
                 _quickAccessExpanded.value = expanded
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.appLockEnabled.collect { enabled ->
+                _appLockEnabled.value = enabled
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.appLockTimeout.collect { timeout ->
+                _appLockTimeout.value = timeout
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.language.collect { lang ->
+                _language.value = lang
+            }
+        }
+        viewModelScope.launch {
+            historyRepository.historyItems.collect { items ->
+                _encryptionHistory.value = items
             }
         }
     }
@@ -105,6 +170,21 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setThemeMode(mode) }
     }
 
+    fun setAppTheme(theme: AppTheme) {
+        _appTheme.value = theme
+        viewModelScope.launch { settingsRepository.setAppTheme(theme) }
+    }
+
+    fun setLanguage(language: String) {
+        _language.value = language
+        viewModelScope.launch { settingsRepository.setLanguage(language) }
+    }
+
+    fun setDynamicColor(enabled: Boolean) {
+        _dynamicColor.value = enabled
+        viewModelScope.launch { settingsRepository.setDynamicColor(enabled) }
+    }
+
     fun setQuickAccessExpanded(expanded: Boolean) {
         _quickAccessExpanded.value = expanded
         viewModelScope.launch { settingsRepository.setQuickAccessExpanded(expanded) }
@@ -113,13 +193,29 @@ class MainViewModel @Inject constructor(
     fun setKeyfileUri(uri: Uri?) {
         _keyfileUri.value = uri
     }
-    
+
     fun toggleIntegrityCheck(enabled: Boolean) {
         _enableIntegrityCheck.value = enabled
     }
-    
+
     fun clearLastDecryptionResult() {
         _lastDecryptionResult.value = null
+    }
+
+    // App lock methods
+    fun enableAppLock() {
+        _appLockEnabled.value = true
+        viewModelScope.launch { settingsRepository.setAppLockEnabled(true) }
+    }
+
+    fun disableAppLock() {
+        _appLockEnabled.value = false
+        viewModelScope.launch { settingsRepository.setAppLockEnabled(false) }
+    }
+
+    fun setAppLockTimeout(timeout: Long) {
+        _appLockTimeout.value = timeout
+        viewModelScope.launch { settingsRepository.setAppLockTimeout(timeout) }
     }
 
     fun cancelOperation() {
@@ -129,12 +225,83 @@ class MainViewModel @Inject constructor(
         _progress.value = 0f
     }
 
+    // ─── Biometric Password Management ─────────────────────────────────────────
+
+    /**
+     * Store the encryption password with biometric protection.
+     * Call this after successful encryption when user wants to save password.
+     */
+    fun savePasswordWithBiometric(password: CharArray): Boolean {
+        return biometricAuthManager.storePasswordWithBiometric(password)
+    }
+
+    /**
+     * Retrieve the stored password after biometric authentication.
+     * Returns the password as CharArray, or null if not available.
+     */
+    fun getStoredPassword(): CharArray? {
+        return biometricAuthManager.retrieveStoredPassword()
+    }
+
+    /**
+     * Check if a password is stored and ready for biometric unlock.
+     */
+    fun hasStoredPassword(): Boolean {
+        return biometricAuthManager.hasStoredPassword()
+    }
+
+    /**
+     * Clear the stored password.
+     */
+    fun clearStoredPassword() {
+        biometricAuthManager.clearStoredPassword()
+    }
+
+    /**
+     * Request to save password with biometric protection after encryption.
+     * Call this when encryption completes and biometric is enabled.
+     */
+    fun requestPasswordSave(password: CharArray) {
+        // Only show prompt if biometric is enabled and password is not empty
+        if (biometricAuthManager.isBiometricEnabled() && password.isNotEmpty()) {
+            pendingPasswordToSave = password.copyOf()
+            _showPasswordSavePrompt.value = true
+        } else {
+            password.fill('0')
+        }
+    }
+
+    /**
+     * Confirm saving the password with biometric protection.
+     */
+    fun confirmSavePassword(): Boolean {
+        val password = pendingPasswordToSave
+        return if (password != null) {
+            val success = savePasswordWithBiometric(password)
+            password.fill('0')
+            pendingPasswordToSave = null
+            _showPasswordSavePrompt.value = false
+            success
+        } else {
+            false
+        }
+    }
+
+    /**
+     * Dismiss the password save prompt without saving.
+     */
+    fun dismissPasswordSavePrompt() {
+        pendingPasswordToSave?.fill('0')
+        pendingPasswordToSave = null
+        _showPasswordSavePrompt.value = false
+    }
+
     // ─── Public entry points ───────────────────────────────────────────────────
 
     fun encryptFiles(
-        uris: List<Uri>, 
-        password: CharArray, 
-        method: EncryptionMethod = EncryptionMethod.STANDARD, 
+        uris: List<Uri>,
+        password: CharArray,
+        method: EncryptionMethod = EncryptionMethod.STANDARD,
         deleteOriginal: Boolean = false,
         enableIntegrityCheck: Boolean = false
     ) {
@@ -145,13 +312,45 @@ class MainViewModel @Inject constructor(
             try {
                 // Read keyfile if set
                 val keyfileBytes = _keyfileUri.value?.let { readKeyfile(it) }
-                
+
                 uris.forEachIndexed { index, uri ->
                     _statusMessage.value = "Encrypting file ${index + 1} of ${uris.size}..."
-                    processSingleEncryption(uri, password, method, deleteOriginal, keyfileBytes, enableIntegrityCheck)
+                    val fileName = getFileNameFromUri(uri)
+                    val fileSize = getFileSizeFromUri(uri)
+
+                    try {
+                        processSingleEncryption(uri, password, method, deleteOriginal, keyfileBytes, enableIntegrityCheck)
+                        // Add to history on success
+                        historyRepository.addHistoryItem(
+                            createHistoryItem(
+                                fileName = fileName,
+                                fileSize = fileSize,
+                                operationType = EncryptionHistoryItem.OperationType.ENCRYPT,
+                                encryptionMethod = method,
+                                success = true,
+                                secureDelete = deleteOriginal
+                            )
+                        )
+                    } catch (e: Exception) {
+                        // Add failed operation to history
+                        historyRepository.addHistoryItem(
+                            createHistoryItem(
+                                fileName = fileName,
+                                fileSize = fileSize,
+                                operationType = EncryptionHistoryItem.OperationType.ENCRYPT,
+                                encryptionMethod = method,
+                                success = false,
+                                errorMessage = e.localizedMessage
+                            )
+                        )
+                        throw e
+                    }
                 }
                 _statusMessage.value = "Encryption Complete!"
                 _progress.value = 1f
+                
+                // Request password save if biometric is enabled
+                requestPasswordSave(password)
             } catch (e: Exception) {
                 _statusMessage.value = "Error: ${e.localizedMessage}"
             } finally {
@@ -162,9 +361,9 @@ class MainViewModel @Inject constructor(
     }
 
     fun encryptFolderTree(
-        treeUri: Uri, 
-        password: CharArray, 
-        method: EncryptionMethod = EncryptionMethod.STANDARD, 
+        treeUri: Uri,
+        password: CharArray,
+        method: EncryptionMethod = EncryptionMethod.STANDARD,
         deleteOriginal: Boolean = false,
         enableIntegrityCheck: Boolean = false
     ) {
@@ -174,7 +373,7 @@ class MainViewModel @Inject constructor(
             try {
                 // Read keyfile if set
                 val keyfileBytes = _keyfileUri.value?.let { readKeyfile(it) }
-                
+
                 val rootFolder = DocumentFile.fromTreeUri(getApplication(), treeUri)
                 if (rootFolder != null && rootFolder.isDirectory) {
                     val files = mutableListOf<DocumentFile>()
@@ -185,6 +384,9 @@ class MainViewModel @Inject constructor(
                     }
                     _statusMessage.value = "Folder Encryption Complete!"
                     _progress.value = 1f
+                    
+                    // Request password save if biometric is enabled
+                    requestPasswordSave(password)
                 }
             } catch (e: Exception) {
                 _statusMessage.value = "Error: ${e.localizedMessage}"
@@ -672,6 +874,44 @@ class MainViewModel @Inject constructor(
         dir.listFiles().forEach { file ->
             if (file.isDirectory) collectDocumentFiles(file, result)
             else result.add(file)
+        }
+    }
+
+    // ─── Helper methods for history tracking ───────────────────────────────────
+
+    private fun getFileNameFromUri(uri: Uri): String {
+        return try {
+            val app = getApplication<Application>()
+            DocumentFile.fromSingleUri(app, uri)?.name ?: uri.lastPathSegment ?: "Unknown"
+        } catch (e: Exception) {
+            "Unknown"
+        }
+    }
+
+    private fun getFileSizeFromUri(uri: Uri): Long {
+        return try {
+            val app = getApplication<Application>()
+            DocumentFile.fromSingleUri(app, uri)?.length() ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    /**
+     * Clear all encryption history.
+     */
+    fun clearEncryptionHistory() {
+        viewModelScope.launch {
+            historyRepository.clearHistory()
+        }
+    }
+
+    /**
+     * Remove a specific item from history.
+     */
+    fun removeHistoryItem(itemId: String) {
+        viewModelScope.launch {
+            historyRepository.removeItem(itemId)
         }
     }
 }

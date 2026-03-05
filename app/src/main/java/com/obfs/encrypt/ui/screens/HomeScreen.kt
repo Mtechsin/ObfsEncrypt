@@ -1,6 +1,8 @@
 package com.obfs.encrypt.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -9,20 +11,18 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,10 +41,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
-import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Security
@@ -59,15 +56,21 @@ import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import com.obfs.encrypt.crypto.EncryptionMethod
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -86,12 +89,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.obfs.encrypt.R
+import com.obfs.encrypt.crypto.EncryptionMethod
 import com.obfs.encrypt.ui.components.FilePickerLauncher
 import com.obfs.encrypt.ui.components.PickType
 import com.obfs.encrypt.ui.theme.Motion
@@ -110,36 +115,47 @@ data class RecentActivity(
 enum class ActivityType { ENCRYPT, DECRYPT }
 
 data class BottomNavItem(
-    val title: String,
+    val titleResId: Int,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: MainViewModel,
-    onNavigateToSettings: () -> Unit,
+    onNavigateToSettings: (Int) -> Unit,
     onNavigateToDecrypt: () -> Unit,
     onNavigateToFileBrowser: () -> Unit,
-    onNavigateToProgress: (String) -> Unit
+    onNavigateToProgress: (String) -> Unit,
+    onNavigateToHistory: () -> Unit,
+    restoreTabIndex: Int? = null
 ) {
     android.util.Log.d("HomeScreen", "HomeScreen COMPOSING")
     
     val navItems = listOf(
         BottomNavItem(
-            title = "Encrypt",
+            titleResId = R.string.encrypt,
             selectedIcon = Icons.Filled.Shield,
             unselectedIcon = Icons.Outlined.Lock
         ),
         BottomNavItem(
-            title = "Files",
+            titleResId = R.string.files,
             selectedIcon = Icons.Filled.Folder,
             unselectedIcon = Icons.Outlined.Folder
         )
     )
 
-    var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
+    var selectedTabIndex by rememberSaveable { mutableIntStateOf(restoreTabIndex ?: 0) }
     var previousTabIndex by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(restoreTabIndex) {
+        restoreTabIndex?.let { tabIndex ->
+            if (tabIndex != selectedTabIndex) {
+                selectedTabIndex = tabIndex
+            }
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -192,11 +208,13 @@ fun HomeScreen(
         ) { tabIndex ->
             when (tabIndex) {
                 0 -> EncryptTabContent(
-                    onNavigateToSettings = onNavigateToSettings,
+                    viewModel = viewModel,
                     onNavigateToDecrypt = onNavigateToDecrypt,
+                    onNavigateToSettings = onNavigateToSettings,
                     onNavigateToFileBrowser = onNavigateToFileBrowser,
                     onNavigateToProgress = onNavigateToProgress,
-                    viewModel = viewModel
+                    onNavigateToHistory = onNavigateToHistory,
+                    currentTabIndex = tabIndex
                 )
                 1 -> FileBrowserScreen(
                     onNavigateBack = { selectedTabIndex = 0 },
@@ -215,6 +233,7 @@ private fun AnimatedNavigationBar(
     onItemSelected: (Int) -> Unit
 ) {
     val density = LocalDensity.current
+    val isDarkTheme = isSystemInDarkTheme()
     var barWidth by remember { mutableStateOf(0) }
     val itemWidth = if (items.isNotEmpty() && barWidth > 0) barWidth / items.size else 0
     val indicatorOffsetPx by animateFloatAsState(
@@ -237,7 +256,7 @@ private fun AnimatedNavigationBar(
                     barWidth = coordinates.size.width
                 }
         ) {
-            if (barWidth > 0) {
+            if (barWidth > 0 && isDarkTheme) {
                 val pillWidthPx = with(density) { pillWidth.toPx() }
                 Box(
                     modifier = Modifier
@@ -319,6 +338,8 @@ private fun AnimatedNavItem(
         label = "label_offset"
     )
 
+    val title = stringResource(item.titleResId)
+
     Column(
         modifier = modifier
             .clickable(
@@ -357,7 +378,7 @@ private fun AnimatedNavItem(
             ) { selected ->
                 Icon(
                     imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                    contentDescription = item.title,
+                    contentDescription = title,
                     modifier = Modifier.size(24.dp),
                     tint = iconTint
                 )
@@ -367,7 +388,7 @@ private fun AnimatedNavItem(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = item.title,
+            text = title,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             color = iconTint.copy(alpha = labelAlpha),
@@ -382,11 +403,13 @@ private fun AnimatedNavItem(
 
 @Composable
 private fun EncryptTabContent(
-    onNavigateToSettings: () -> Unit,
+    onNavigateToSettings: (Int) -> Unit,
     onNavigateToDecrypt: () -> Unit,
     onNavigateToFileBrowser: () -> Unit,
     onNavigateToProgress: (String) -> Unit,
-    viewModel: MainViewModel
+    onNavigateToHistory: () -> Unit,
+    viewModel: MainViewModel,
+    currentTabIndex: Int
 ) {
     var pickType by remember { mutableStateOf(PickType.NONE) }
     var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -485,7 +508,7 @@ private fun EncryptTabContent(
         PasswordDialog(
             uris = selectedUris,
             isFolder = selectedUris.size == 1 && selectedUris.first().path?.contains("tree") == true,
-            onDismiss = { 
+            onDismiss = {
                 showPasswordDialog = false
                 dialogStep = 2
                 showMethodDialog = true
@@ -508,20 +531,86 @@ private fun EncryptTabContent(
         )
     }
 
+    // Password save prompt after successful encryption
+    val showPasswordSavePrompt by viewModel.showPasswordSavePrompt.collectAsState()
+    if (showPasswordSavePrompt) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPasswordSavePrompt() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Security,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text(stringResource(R.string.save_password_prompt_title)) },
+            text = {
+                Text(stringResource(R.string.save_password_prompt_text))
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val success = viewModel.confirmSavePassword()
+                        // Optionally show success/failure feedback
+                    }
+                ) {
+                    Text(stringResource(R.string.save_password))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissPasswordSavePrompt() }) {
+                    Text(stringResource(R.string.not_now))
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        ModernHeroHeader(encryptedCount = 0)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Privacy Vault",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Row {
+                IconButton(
+                    onClick = onNavigateToHistory,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.History,
+                        contentDescription = stringResource(R.string.history),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { onNavigateToSettings(currentTabIndex) },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = stringResource(R.string.settings),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+        }
 
         SectionHeader(
-            title = "Quick Actions",
-            subtitle = "Select files or folders to encrypt"
+            title = stringResource(R.string.quick_actions),
+            subtitle = stringResource(R.string.select_files_subtitle)
         )
 
         ModernQuickActionGrid(
@@ -530,23 +619,59 @@ private fun EncryptTabContent(
             onFolder = { pickType = PickType.FOLDER }
         )
 
-        ModernToolsSection(
-            onDecryptClick = onNavigateToDecrypt,
-            onSettingsClick = onNavigateToSettings
+        SectionHeader(
+            title = stringResource(R.string.decrypt_files),
+            subtitle = stringResource(R.string.select_files_to_decrypt)
         )
+
+        ElevatedCard(
+            onClick = onNavigateToDecrypt,
+            modifier = Modifier
+                .fillMaxWidth()
+                .pressClickEffect(),
+            shape = RoundedCornerShape(20.dp),
+            colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.LockOpen,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.decrypt),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        text = stringResource(R.string.select_files_to_decrypt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
 
         SectionHeader(
-            title = "Recent Activity",
-            subtitle = "Your encryption history"
-        )
-
-        RecentActivitySection(
-            activities = emptyList()
-        )
-
-        SectionHeader(
-            title = "Security Tips",
-            subtitle = "Best practices for file protection"
+            title = stringResource(R.string.security_tips),
+            subtitle = stringResource(R.string.security_tips_subtitle)
         )
 
         SecurityTipsCard()
@@ -583,7 +708,7 @@ private fun ModernHeroHeader(encryptedCount: Int) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Obfs Encrypt",
+                        text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -591,7 +716,7 @@ private fun ModernHeroHeader(encryptedCount: Int) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Military-grade encryption for your files",
+                        text = stringResource(R.string.military_grade_encryption),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                         lineHeight = 20.sp
@@ -614,7 +739,7 @@ private fun ModernHeroHeader(encryptedCount: Int) {
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "AES-256-GCM",
+                            text = stringResource(R.string.aes_256_gcm),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -652,7 +777,7 @@ private fun ModernHeroHeader(encryptedCount: Int) {
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                text = "Files Encrypted",
+                                text = stringResource(R.string.files_encrypted),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                             )
@@ -677,13 +802,13 @@ private fun ModernHeroHeader(encryptedCount: Int) {
                         )
                         Column {
                             Text(
-                                text = "Active",
+                                text = stringResource(R.string.active),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                text = "Protection",
+                                text = stringResource(R.string.protection),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                             )
@@ -693,17 +818,6 @@ private fun ModernHeroHeader(encryptedCount: Int) {
             }
         }
     }
-}
-
-@Composable
-private fun DeviceTabContent(
-    onNavigateToProgress: (String) -> Unit,
-    viewModel: MainViewModel
-) {
-    DeviceFoldersScreen(
-        onNavigateToProgress = onNavigateToProgress,
-        viewModel = viewModel
-    )
 }
 
 @Composable
@@ -745,8 +859,8 @@ private fun ModernQuickActionGrid(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             ModernQuickActionCard(
-                title = "Single File",
-                subtitle = "Encrypt one file",
+                title = stringResource(R.string.single_file),
+                subtitle = stringResource(R.string.encrypt_one_file),
                 icon = Icons.AutoMirrored.Outlined.InsertDriveFile,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -754,8 +868,8 @@ private fun ModernQuickActionGrid(
                 modifier = Modifier.weight(1f)
             )
             ModernQuickActionCard(
-                title = "Multiple",
-                subtitle = "Batch encrypt",
+                title = stringResource(R.string.multiple_files),
+                subtitle = stringResource(R.string.batch_encrypt),
                 icon = Icons.Outlined.FolderZip,
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -765,8 +879,8 @@ private fun ModernQuickActionGrid(
         }
 
         ModernWideActionCard(
-            title = "Entire Folder",
-            subtitle = "Encrypt all files recursively",
+            title = stringResource(R.string.entire_folder),
+            subtitle = stringResource(R.string.encrypt_folder_recursive),
             icon = Icons.Outlined.CreateNewFolder,
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
             contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -965,13 +1079,13 @@ private fun ModernToolsSection(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Decrypt Files",
+                        text = stringResource(R.string.decrypt_files),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Unlock .obfs secure archives",
+                        text = stringResource(R.string.unlock_obfs),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1031,7 +1145,7 @@ private fun ModernToolsSection(
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "Application Settings",
+                    text = stringResource(R.string.application_settings),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1050,7 +1164,8 @@ private fun ModernToolsSection(
 
 @Composable
 private fun RecentActivitySection(
-    activities: List<RecentActivity>
+    activities: List<RecentActivity>,
+    onViewAllClick: () -> Unit = {}
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1062,10 +1177,40 @@ private fun RecentActivitySection(
             defaultElevation = 1.dp
         )
     ) {
-        if (activities.isEmpty()) {
-            EmptyActivityState()
-        } else {
-            ActivityList(activities = activities)
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Header with View All button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.recent_activity),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                androidx.compose.material3.TextButton(
+                    onClick = onViewAllClick,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.view_all),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            
+            if (activities.isEmpty()) {
+                EmptyActivityState()
+            } else {
+                ActivityList(activities = activities)
+            }
         }
     }
 }
@@ -1098,14 +1243,14 @@ private fun EmptyActivityState() {
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "No recent activity",
+            text = stringResource(R.string.no_recent_activity),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Your encryption and decryption history will appear here",
+            text = stringResource(R.string.history_appearance_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1243,7 +1388,7 @@ private fun SecurityTipsCard() {
                     }
                 }
                 Text(
-                    text = "Security Best Practices",
+                    text = stringResource(R.string.security_tips),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -1253,10 +1398,10 @@ private fun SecurityTipsCard() {
             Spacer(modifier = Modifier.height(16.dp))
 
             val tips = listOf(
-                "Use strong, unique passwords for each encryption",
-                "Store encrypted backups in multiple locations",
-                "Never share your encryption passwords via email or chat",
-                "Regularly verify your encrypted files are accessible"
+                stringResource(R.string.security_tip_1),
+                stringResource(R.string.security_tip_2),
+                stringResource(R.string.security_tip_3),
+                stringResource(R.string.security_tip_4)
             )
 
             tips.forEachIndexed { index, tip ->
@@ -1327,7 +1472,7 @@ private fun HeroHeader(encryptedCount: Int) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Obfs Encrypt",
+                        text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onPrimary,
@@ -1335,7 +1480,7 @@ private fun HeroHeader(encryptedCount: Int) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Military-grade encryption for your files",
+                        text = stringResource(R.string.military_grade_encryption),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
                         lineHeight = 20.sp
@@ -1358,7 +1503,7 @@ private fun HeroHeader(encryptedCount: Int) {
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                         Text(
-                            text = "AES-256-GCM",
+                            text = stringResource(R.string.aes_256_gcm),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary
@@ -1396,7 +1541,7 @@ private fun HeroHeader(encryptedCount: Int) {
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
                             Text(
-                                text = "Files Encrypted",
+                                text = stringResource(R.string.files_encrypted),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                             )
@@ -1421,13 +1566,13 @@ private fun HeroHeader(encryptedCount: Int) {
                         )
                         Column {
                             Text(
-                                text = "Active",
+                                text = stringResource(R.string.active),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
                             Text(
-                                text = "Protection",
+                                text = stringResource(R.string.protection),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                             )
@@ -1462,8 +1607,8 @@ private fun QuickActionGrid(
                 modifier = Modifier.weight(1f)
             ) {
                 QuickActionCard(
-                    title = "Single File",
-                    subtitle = "Encrypt one file",
+                    title = stringResource(R.string.single_file),
+                    subtitle = stringResource(R.string.encrypt_one_file),
                     icon = Icons.AutoMirrored.Outlined.InsertDriveFile,
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1479,8 +1624,8 @@ private fun QuickActionGrid(
                 modifier = Modifier.weight(1f)
             ) {
                 QuickActionCard(
-                    title = "Multiple",
-                    subtitle = "Batch encrypt",
+                    title = stringResource(R.string.multiple_files),
+                    subtitle = stringResource(R.string.batch_encrypt),
                     icon = Icons.Outlined.FolderZip,
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -1497,8 +1642,8 @@ private fun QuickActionGrid(
             )
         ) {
             WideActionCard(
-                title = "Entire Folder",
-                subtitle = "Encrypt all files recursively",
+                title = stringResource(R.string.entire_folder),
+                subtitle = stringResource(R.string.encrypt_folder_recursive),
                 icon = Icons.Outlined.CreateNewFolder,
                 containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                 contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -1688,13 +1833,13 @@ private fun DecryptCard(onClick: () -> Unit) {
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Decrypt Files",
+                    text = stringResource(R.string.decrypt_files),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Unlock .obfs secure archives",
+                    text = stringResource(R.string.unlock_obfs),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1734,7 +1879,7 @@ private fun SettingsCard(onClick: () -> Unit) {
             )
             Spacer(modifier = Modifier.width(16.dp))
             Text(
-                text = "Application Settings",
+                text = stringResource(R.string.application_settings),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1789,13 +1934,13 @@ private fun BrowseFilesCard(onClick: () -> Unit) {
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Browse Files",
+                    text = stringResource(R.string.browse_files),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Quick access to common folders",
+                    text = stringResource(R.string.quick_access_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

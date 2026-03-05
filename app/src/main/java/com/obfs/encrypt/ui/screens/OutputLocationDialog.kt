@@ -1,6 +1,7 @@
 package com.obfs.encrypt.ui.screens
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -25,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
@@ -47,15 +47,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.obfs.encrypt.R
 
 @Composable
 fun OutputLocationDialog(
@@ -79,7 +79,7 @@ fun OutputLocationDialog(
     }
 
     LaunchedEffect(Unit) {
-        android.widget.Toast.makeText(context, "Choose where to save encrypted/decrypted files", android.widget.Toast.LENGTH_LONG).show()
+        Toast.makeText(context, context.getString(R.string.select_files_subtitle), Toast.LENGTH_LONG).show()
     }
 
     Dialog(
@@ -129,14 +129,14 @@ fun OutputLocationDialog(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "Output Location",
+                                text = stringResource(R.string.output_location),
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Where should files be saved?",
+                                text = "Where should files be saved?", // Add to strings.xml if needed
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
@@ -152,8 +152,8 @@ fun OutputLocationDialog(
                     ) {
                         // Option 1: Use source directory
                         LocationOptionCard(
-                            title = "Same as Source",
-                            subtitle = "Save in the same directory as the original file",
+                            title = "Same as Source", // Add to strings.xml
+                            subtitle = "Save in the same directory as the original file", // Add to strings.xml
                             icon = Icons.Outlined.Folder,
                             isSelected = !isCustomSelected,
                             onClick = { 
@@ -165,10 +165,10 @@ fun OutputLocationDialog(
 
                         // Option 2: Custom folder
                         LocationOptionCard(
-                            title = "Choose Custom Folder",
+                            title = stringResource(R.string.custom_output_directory),
                             subtitle = customFolderUri?.let { 
-                                "Selected: ${it.lastPathSegment ?: "Custom folder"}" 
-                            } ?: "Tap to select a specific folder",
+                                "Selected: ${it.lastPathSegment ?: context.getString(R.string.selected_folder)}" 
+                            } ?: "Tap to select a specific folder", // Add to strings.xml
                             icon = Icons.Default.FolderOpen,
                             isSelected = isCustomSelected,
                             onClick = {
@@ -200,7 +200,7 @@ fun OutputLocationDialog(
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Text(
-                                    text = "This setting will be saved and used for all future operations.",
+                                    text = "This setting will be saved and used for all future operations.", // Add to strings.xml
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -223,7 +223,7 @@ fun OutputLocationDialog(
                                     MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                                 )
                             ) {
-                                Text("Cancel", fontWeight = FontWeight.Medium)
+                                Text(stringResource(R.string.cancel), fontWeight = FontWeight.Medium)
                             }
 
                             Button(
@@ -242,7 +242,7 @@ fun OutputLocationDialog(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.size(8.dp))
-                                Text("Continue", fontWeight = FontWeight.Bold)
+                                Text("Continue", fontWeight = FontWeight.Bold) // Add to strings.xml
                             }
                         }
                     }

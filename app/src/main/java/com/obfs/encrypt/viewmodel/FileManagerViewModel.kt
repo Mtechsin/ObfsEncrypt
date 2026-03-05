@@ -1,9 +1,14 @@
 package com.obfs.encrypt.viewmodel
 
 import android.app.Application
+import android.content.Intent
 import android.os.Environment
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.obfs.encrypt.data.QuickAccessRepository
+import com.obfs.encrypt.data.RecentFoldersRepository
+import com.obfs.encrypt.data.SettingsRepository
 import com.obfs.encrypt.performance.TraceSection
 import com.obfs.encrypt.performance.TraceSections
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,9 +31,19 @@ data class FileItem(
     val lastModified: Long
 )
 
+enum class SortOption {
+    NAME,
+    DATE,
+    SIZE,
+    TYPE
+}
+
 @HiltViewModel
 class FileManagerViewModel @Inject constructor(
-    application: Application
+    application: Application,
+    private val settingsRepository: SettingsRepository,
+    private val quickAccessRepository: QuickAccessRepository,
+    private val recentFoldersRepository: RecentFoldersRepository
 ) : AndroidViewModel(application) {
 
     private val rootDirectory = Environment.getExternalStorageDirectory()
@@ -47,6 +63,21 @@ class FileManagerViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _sortOrder = MutableStateFlow(SortOption.NAME)
+    val sortOrder: StateFlow<SortOption> = _sortOrder.asStateFlow()
+
+    private val _sortAscending = MutableStateFlow(true)
+    val sortAscending: StateFlow<Boolean> = _sortAscending.asStateFlow()
+
+    private val _favoritePaths = MutableStateFlow<Set<String>>(emptySet())
+    val favoritePaths: StateFlow<Set<String>> = _favoritePaths.asStateFlow()
+
+    private val _recentFolders = MutableStateFlow<List<String>>(emptyList())
+    val recentFolders: StateFlow<List<String>> = _recentFolders.asStateFlow()
+
+    private val _batchOperationResult = MutableStateFlow<BatchOperationResult?>(null)
+    val batchOperationResult: StateFlow<BatchOperationResult?> = _batchOperationResult.asStateFlow()
+
     // Performance: Cache for directory listings to avoid redundant disk reads
     private val directoryCache = mutableMapOf<String, List<FileItem>>()
     private val maxCacheSize = 50 // Limit cache to prevent memory issues
@@ -55,11 +86,34 @@ class FileManagerViewModel @Inject constructor(
     private var loadJob: Job? = null
 
     init {
+        // Load sort preferences from settings
+        viewModelScope.launch {
+            _sortOrder.value = SortOption.valueOf(settingsRepository.fileSortOrder.first())
+        }
+        viewModelScope.launch {
+            _sortAscending.value = settingsRepository.fileSortAscending.first()
+        }
+        // Load favorite paths
+        viewModelScope.launch {
+            quickAccessRepository.favoritePaths.collect { favorites ->
+                _favoritePaths.value = favorites
+            }
+        }
+        // Load recent folders
+        viewModelScope.launch {
+            recentFoldersRepository.recentFolders.collect { folders ->
+                _recentFolders.value = folders
+            }
+        }
         loadDirectory(rootDirectory)
     }
 
     fun navigateTo(directory: File) {
         if (directory.isDirectory && directory.canRead()) {
+            // Track as recent folder
+            viewModelScope.launch {
+                recentFoldersRepository.addRecentFolder(directory.absolutePath)
+            }
             loadDirectory(directory)
         } else {
             _error.value = "Cannot read directory: ${directory.name}"
@@ -114,6 +168,253 @@ class FileManagerViewModel @Inject constructor(
         clearSelection()
     }
 
+    fun setSortOrder(sortOrder: SortOption) {
+        _sortOrder.value = sortOrder
+        viewModelScope.launch {
+            settingsRepository.setFileSortOrder(sortOrder.name)
+        }
+        // Reload current directory with new sort order
+        loadDirectory(_currentDirectory.value, forceRefresh = true)
+    }
+
+    fun toggleSortAscending() {
+        _sortAscending.value = !_sortAscending.value
+        viewModelScope.launch {
+            settingsRepository.setFileSortAscending(_sortAscending.value)
+        }
+        // Reload current directory with new sort order
+        loadDirectory(_currentDirectory.value, forceRefresh = true)
+    }
+
+    fun toggleFavorite(path: String) {
+        viewModelScope.launch {
+            quickAccessRepository.toggleFavorite(path)
+        }
+    }
+
+    fun isFavorite(path: String): Boolean {
+        return path in _favoritePaths.value
+    }
+
+    fun clearRecentFolders() {
+        viewModelScope.launch {
+            recentFoldersRepository.clearRecentFolders()
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Batch Operations
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Delete selected files permanently.
+     */
+    fun batchDelete(files: List<File>) {
+        if (files.isEmpty()) return
+        
+        viewModelScope.launch {
+            _isLoading.value = true
+            var successCount = 0
+            var failCount = 0
+            
+            withContext(Dispatchers.IO) {
+                files.forEach { file ->
+                    try {
+                        if (file.deleteRecursively()) {
+                            successCount++
+                        } else {
+                            failCount++
+                        }
+                    } catch (e: Exception) {
+                        failCount++
+                    }
+                }
+            }
+            
+            _batchOperationResult.value = BatchOperationResult(
+                successCount = successCount,
+                failCount = failCount,
+                operation = "Delete"
+            )
+            _isLoading.value = false
+            clearSelection()
+            refreshCurrentDirectory()
+        }
+    }
+
+    /**
+     * Copy selected files to destination directory.
+     */
+    fun batchCopy(files: List<File>, destinationDir: File) {
+        if (files.isEmpty() || !destinationDir.exists()) return
+        
+        viewModelScope.launch {
+            _isLoading.value = true
+            var successCount = 0
+            var failCount = 0
+            
+            withContext(Dispatchers.IO) {
+                files.forEach { file ->
+                    try {
+                        val targetFile = File(destinationDir, file.name)
+                        if (file.isDirectory) {
+                            file.copyRecursively(targetFile, overwrite = true)
+                        } else {
+                            file.copyTo(targetFile, overwrite = true)
+                        }
+                        successCount++
+                    } catch (e: Exception) {
+                        failCount++
+                    }
+                }
+            }
+            
+            _batchOperationResult.value = BatchOperationResult(
+                successCount = successCount,
+                failCount = failCount,
+                operation = "Copy"
+            )
+            _isLoading.value = false
+            clearSelection()
+        }
+    }
+
+    /**
+     * Move selected files to destination directory.
+     */
+    fun batchMove(files: List<File>, destinationDir: File) {
+        if (files.isEmpty() || !destinationDir.exists()) return
+        
+        viewModelScope.launch {
+            _isLoading.value = true
+            var successCount = 0
+            var failCount = 0
+            
+            withContext(Dispatchers.IO) {
+                files.forEach { file ->
+                    try {
+                        val targetFile = File(destinationDir, file.name)
+                        if (file.isDirectory) {
+                            file.copyRecursively(targetFile, overwrite = true)
+                            file.deleteRecursively()
+                        } else {
+                            file.copyTo(targetFile, overwrite = true)
+                            file.delete()
+                        }
+                        successCount++
+                    } catch (e: Exception) {
+                        failCount++
+                    }
+                }
+            }
+            
+            _batchOperationResult.value = BatchOperationResult(
+                successCount = successCount,
+                failCount = failCount,
+                operation = "Move"
+            )
+            _isLoading.value = false
+            clearSelection()
+            refreshCurrentDirectory()
+        }
+    }
+
+    /**
+     * Share selected files via system share intent.
+     * Returns a list of URIs to share.
+     */
+    fun batchShare(files: List<File>, context: android.content.Context): Intent? {
+        if (files.isEmpty()) return null
+        
+        val uris = files.mapNotNull { file ->
+            try {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
+        
+        if (uris.isEmpty()) return null
+        
+        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "*/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        
+        return intent
+    }
+
+    fun clearBatchOperationResult() {
+        _batchOperationResult.value = null
+    }
+
+    /**
+     * Search files recursively in the current directory and subdirectories.
+     */
+    fun searchFiles(
+        query: String,
+        searchSubfolders: Boolean = false,
+        onComplete: (List<FileItem>) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            val results = withContext(Dispatchers.IO) {
+                val results = mutableListOf<FileItem>()
+                if (searchSubfolders) {
+                    searchRecursive(_currentDirectory.value, query, results)
+                } else {
+                    _currentDirectory.value.listFiles()?.forEach { file ->
+                        if (file.name.contains(query, ignoreCase = true)) {
+                            results.add(
+                                FileItem(
+                                    file = file,
+                                    isDirectory = file.isDirectory,
+                                    name = file.name,
+                                    size = file.length(),
+                                    lastModified = file.lastModified()
+                                )
+                            )
+                        }
+                    }
+                }
+                // Sort results: folders first, then alphabetically
+                results.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+            }
+            _batchOperationResult.value = null
+            _isLoading.value = false
+            onComplete(results)
+        }
+    }
+
+    private fun searchRecursive(directory: File, query: String, results: MutableList<FileItem>) {
+        try {
+            val files = directory.listFiles() ?: return
+            files.forEach { file ->
+                if (file.name.contains(query, ignoreCase = true)) {
+                    results.add(
+                        FileItem(
+                            file = file,
+                            isDirectory = file.isDirectory,
+                            name = file.name,
+                            size = file.length(),
+                            lastModified = file.lastModified()
+                        )
+                    )
+                }
+                if (file.isDirectory && file.canRead()) {
+                    searchRecursive(file, query, results)
+                }
+            }
+        } catch (e: Exception) {
+            // Skip inaccessible directories
+        }
+    }
+
     fun loadCurrentDirectory() {
         loadDirectory(_currentDirectory.value)
     }
@@ -164,8 +465,10 @@ class FileManagerViewModel @Inject constructor(
                                 lastModified = file.lastModified()
                             )
                         }
-                        // Sort: Folders first, then files, both alphabetically
-                        mappedItems.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                        // Apply sorting based on current sort order and ascending preference
+                        val sortOrder = _sortOrder.value
+                        val ascending = _sortAscending.value
+                        mappedItems.sortedWith(getComparator(sortOrder, ascending))
                     } finally {
                         TraceSection.end()
                     }
@@ -203,4 +506,32 @@ class FileManagerViewModel @Inject constructor(
         val keysToRemove = directoryCache.keys.take(directoryCache.size - maxSize)
         keysToRemove.forEach { directoryCache.remove(it) }
     }
+
+    /**
+     * Get comparator for sorting files based on sort option and order.
+     */
+    private fun getComparator(sortOrder: SortOption, ascending: Boolean): Comparator<FileItem> {
+        val baseComparator = when (sortOrder) {
+            SortOption.NAME -> compareBy<FileItem> { !it.isDirectory }
+                .then(compareBy { it.name.lowercase() })
+            SortOption.DATE -> compareBy<FileItem> { !it.isDirectory }
+                .then(compareByDescending { it.lastModified })
+            SortOption.SIZE -> compareBy<FileItem> { !it.isDirectory }
+                .then(compareByDescending<FileItem> { if (it.isDirectory) 0L else it.size })
+            SortOption.TYPE -> compareBy<FileItem> { !it.isDirectory }
+                .then(compareBy { it.name.substringAfterLast('.', "").lowercase() })
+                .then(compareBy { it.name.lowercase() })
+        }
+        return if (ascending) baseComparator else baseComparator.reversed()
+    }
+}
+
+data class BatchOperationResult(
+    val successCount: Int,
+    val failCount: Int,
+    val operation: String
+) {
+    val isSuccess: Boolean get() = failCount == 0
+    val totalCount: Int get() = successCount + failCount
+    val message: String get() = "$operation: $successCount/$totalCount succeeded"
 }

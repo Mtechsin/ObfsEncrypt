@@ -12,8 +12,14 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /**
- * Manages biometric authentication for the app.
- * Provides fingerprint/face unlock as an extra security layer.
+ * Manages biometric authentication for the app with secure Keystore integration.
+ * Provides fingerprint/face unlock as an extra security layer for accessing stored credentials.
+ * 
+ * Security Features:
+ * - Biometric authentication required to access stored passwords
+ * - All sensitive data encrypted with Android Keystore-backed keys
+ * - Hardware-backed security when available (StrongBox)
+ * - Automatic key generation and management
  */
 @Singleton
 class BiometricAuthManager @Inject constructor(
@@ -21,6 +27,11 @@ class BiometricAuthManager @Inject constructor(
 ) {
 
     private val biometricManager = BiometricManager.from(context)
+    private val secureKeyStore = SecureKeyStore()
+
+    init {
+        secureKeyStore.initialize()
+    }
 
     /**
      * Check if biometric authentication is available on this device.
@@ -33,6 +44,13 @@ class BiometricAuthManager @Inject constructor(
             BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> BiometricStatus.NOT_ENROLLED
             else -> BiometricStatus.UNKNOWN
         }
+    }
+
+    /**
+     * Check if biometric authentication is available and ready to use.
+     */
+    fun isBiometricAvailable(): Boolean {
+        return canAuthenticate() == BiometricStatus.AVAILABLE && isKeystoreReady()
     }
 
     /**
@@ -54,6 +72,11 @@ class BiometricAuthManager @Inject constructor(
     }
 
     /**
+     * Check if Keystore is properly initialized and ready.
+     */
+    fun isKeystoreReady(): Boolean = secureKeyStore.isInitialized()
+
+    /**
      * Authenticate the user using biometric (fingerprint/face).
      * Returns true if authentication succeeds, false otherwise.
      */
@@ -61,11 +84,12 @@ class BiometricAuthManager @Inject constructor(
         activity: FragmentActivity,
         title: String = "Biometric Authentication",
         subtitle: String = "Verify your identity to continue",
-        negativeButtonText: String = "Use Password"
+        negativeButtonText: String = "Use Password",
+        cryptoObject: BiometricPrompt.CryptoObject? = null
     ): BiometricResult = suspendCancellableCoroutine { continuation ->
-        
+
         val executor = ContextCompat.getMainExecutor(context)
-        
+
         val callback = object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 continuation.resume(BiometricResult.Success)
@@ -100,53 +124,81 @@ class BiometricAuthManager @Inject constructor(
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
             .build()
 
-        prompt.authenticate(promptInfo)
+        // If cryptoObject is provided, use it for authenticated encryption/decryption
+        cryptoObject?.let {
+            prompt.authenticate(promptInfo, it)
+        } ?: prompt.authenticate(promptInfo)
     }
 
     /**
      * Store encrypted password using biometric-protected key.
-     * The password is encrypted with a key stored in the Keystore
-     * that requires biometric authentication to use.
+     * The password is encrypted with a key stored in the Android Keystore
+     * that requires device lock screen authentication to use.
+     * 
+     * @param password The password to store (CharArray for security)
+     * @return true if storage succeeded, false otherwise
      */
     fun storePasswordWithBiometric(password: CharArray): Boolean {
         try {
+            if (!secureKeyStore.isInitialized()) {
+                secureKeyStore.initialize()
+            }
+
+            val encrypted = secureKeyStore.encryptPassword(password)
+                ?: return false
+
             val prefs = context.getSharedPreferences(BIOMETRIC_PREFS, Context.MODE_PRIVATE)
-            // Store as encrypted string - in production, use Keystore-backed encryption
-            val encrypted = encryptWithBiometricKey(String(password))
             prefs.edit()
-                .putString(KEY_STORED_PASSWORD, encrypted)
+                .putString(KEY_STORED_PASSWORD_IV, encrypted.iv)
+                .putString(KEY_STORED_PASSWORD_CIPHERTEXT, encrypted.ciphertext)
                 .putBoolean(KEY_HAS_STORED_PASSWORD, true)
                 .apply()
             return true
         } catch (e: Exception) {
+            e.printStackTrace()
             return false
         }
     }
 
     /**
      * Retrieve the stored password after biometric authentication.
-     * Returns null if no password is stored or retrieval fails.
+     * The Keystore will only release the decryption key after successful
+     * device authentication (biometric or lock screen).
+     * 
+     * @return Decrypted password as CharArray, or null if retrieval fails
      */
     fun retrieveStoredPassword(): CharArray? {
         try {
+            if (!secureKeyStore.isInitialized()) {
+                secureKeyStore.initialize()
+            }
+
             val prefs = context.getSharedPreferences(BIOMETRIC_PREFS, Context.MODE_PRIVATE)
-            val encrypted = prefs.getString(KEY_STORED_PASSWORD, null) ?: return null
-            val decrypted = decryptWithBiometricKey(encrypted)
-            return decrypted.toCharArray()
+            val iv = prefs.getString(KEY_STORED_PASSWORD_IV, null) ?: return null
+            val ciphertext = prefs.getString(KEY_STORED_PASSWORD_CIPHERTEXT, null) ?: return null
+
+            val encryptedData = EncryptedData(iv = iv, ciphertext = ciphertext)
+            val decrypted = secureKeyStore.decrypt(encryptedData)
+            
+            return decrypted?.toCharArray()
         } catch (e: Exception) {
+            e.printStackTrace()
             return null
         }
     }
 
     /**
-     * Clear any stored password.
+     * Clear any stored password and delete the Keystore key.
      */
     fun clearStoredPassword() {
         context.getSharedPreferences(BIOMETRIC_PREFS, Context.MODE_PRIVATE)
             .edit()
-            .remove(KEY_STORED_PASSWORD)
+            .remove(KEY_STORED_PASSWORD_IV)
+            .remove(KEY_STORED_PASSWORD_CIPHERTEXT)
             .putBoolean(KEY_HAS_STORED_PASSWORD, false)
             .apply()
+        
+        secureKeyStore.deleteKey()
     }
 
     fun hasStoredPassword(): Boolean {
@@ -154,22 +206,11 @@ class BiometricAuthManager @Inject constructor(
             .getBoolean(KEY_HAS_STORED_PASSWORD, false)
     }
 
-    private fun encryptWithBiometricKey(plaintext: String): String {
-        // In production, this would use BiometricPrompt.CryptoObject with Keystore
-        // For this implementation, we'll use a placeholder that should be replaced
-        // with proper Keystore-backed encryption
-        return android.util.Base64.encodeToString(plaintext.toByteArray(), android.util.Base64.DEFAULT)
-    }
-
-    private fun decryptWithBiometricKey(ciphertext: String): String {
-        // In production, this would use BiometricPrompt.CryptoObject with Keystore
-        return String(android.util.Base64.decode(ciphertext, android.util.Base64.DEFAULT))
-    }
-
     companion object {
         private const val BIOMETRIC_PREFS = "biometric_auth_prefs"
         private const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
-        private const val KEY_STORED_PASSWORD = "stored_password"
+        private const val KEY_STORED_PASSWORD_IV = "stored_password_iv"
+        private const val KEY_STORED_PASSWORD_CIPHERTEXT = "stored_password_ciphertext"
         private const val KEY_HAS_STORED_PASSWORD = "has_stored_password"
     }
 }
@@ -185,6 +226,8 @@ enum class BiometricStatus {
 sealed class BiometricResult {
     object Success : BiometricResult()
     object Cancelled : BiometricResult()
+    object UserCancelled : BiometricResult()
+    object LockedOut : BiometricResult()
     object NotEnrolled : BiometricResult()
     data class Error(val message: String) : BiometricResult()
 }

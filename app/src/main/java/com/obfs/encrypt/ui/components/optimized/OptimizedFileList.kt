@@ -231,12 +231,15 @@ fun OptimizedFileList(
     filesAndFolders: List<FileItem>,
     selectedItems: Set<File>,
     isLoading: Boolean,
+    favoritePaths: Set<String> = emptySet(),
     onFileClick: (FileItem) -> Unit,
     onFileLongClick: (FileItem) -> Unit,
     onToggleSelect: (File) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
     onRefresh: () -> Unit,
+    onToggleFavorite: (String) -> Unit = {},
+    onFilePreview: (FileItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -332,13 +335,17 @@ fun OptimizedFileList(
                     key = { it.file.absolutePath }
                 ) { item ->
                     val isSelected = selectedItems.contains(item.file)
+                    val isFavorite = item.file.absolutePath in favoritePaths
                     DisposableKeyedFileItem(
                         item = item,
                         isSelected = isSelected,
                         hasAnySelection = hasSelection,
+                        isFavorite = isFavorite,
                         onClick = { onFileClick(item) },
                         onLongClick = { onFileLongClick(item) },
-                        onToggleSelect = { onToggleSelect(item.file) }
+                        onToggleSelect = { onToggleSelect(item.file) },
+                        onToggleFavorite = { onToggleFavorite(item.file.absolutePath) },
+                        onThumbnailClick = { onFilePreview(item) }
                     )
                 }
             }
@@ -364,15 +371,18 @@ private fun DisposableKeyedFileItem(
     item: FileItem,
     isSelected: Boolean,
     hasAnySelection: Boolean,
+    isFavorite: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onToggleSelect: () -> Unit
+    onToggleSelect: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onThumbnailClick: () -> Unit
 ) {
     // Use remember to cache expensive computations
     val dateString = remember(item.lastModified) {
         SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(item.lastModified))
     }
-    
+
     val context = LocalContext.current
     val sizeString = remember(item.size) {
         if (item.isDirectory) "" else android.text.format.Formatter.formatShortFileSize(context, item.size)
@@ -386,12 +396,15 @@ private fun DisposableKeyedFileItem(
         item = item,
         isSelected = isSelected,
         hasAnySelection = hasAnySelection,
+        isFavorite = isFavorite,
         dateString = dateString,
         sizeString = sizeString,
         fileType = fileType,
         onClick = onClick,
         onLongClick = onLongClick,
-        onToggleSelect = onToggleSelect
+        onToggleSelect = onToggleSelect,
+        onToggleFavorite = onToggleFavorite,
+        onThumbnailClick = onThumbnailClick
     )
 }
 
@@ -404,12 +417,15 @@ private fun OptimizedFileItemRow(
     item: FileItem,
     isSelected: Boolean,
     hasAnySelection: Boolean,
+    isFavorite: Boolean,
     dateString: String,
     sizeString: String,
     fileType: FileType,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onToggleSelect: () -> Unit
+    onToggleSelect: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onThumbnailClick: () -> Unit
 ) {
     val isImage = fileType == FileType.IMAGE
     val fileColor = getColorForFileType(fileType)
@@ -449,12 +465,18 @@ private fun OptimizedFileItemRow(
             // File type icon or image preview with performance optimizations
             if (isImage && !item.isDirectory) {
                 // Performance: Use cached image loading with memory optimization
-                OptimizedImageThumbnail(
-                    file = item.file,
+                // Click on thumbnail opens preview, click on row selects
+                Box(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(12.dp))
-                )
+                        .clickable(onClick = onThumbnailClick)
+                ) {
+                    OptimizedImageThumbnail(
+                        file = item.file,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             } else {
                 // Show file type icon with minimalist design
                 Box(
@@ -537,6 +559,31 @@ private fun OptimizedFileItemRow(
             }
 
             Spacer(modifier = Modifier.width(12.dp))
+
+            // Favorite star icon - visible when not in selection mode or for folders
+            AnimatedVisibility(
+                visible = !hasAnySelection && item.isDirectory,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                        contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
+                        tint = if (isFavorite) {
+                            Color(0xFFFFD700)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        },
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
 
             // Checkbox - only visible when any items are selected globally
             AnimatedVisibility(
