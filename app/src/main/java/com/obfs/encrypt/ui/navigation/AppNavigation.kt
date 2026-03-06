@@ -33,6 +33,9 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Decrypt : Screen("decrypt")
     object FileBrowser : Screen("file_browser")
+    object FileBrowserWithFolder : Screen("file_browser/{folderPath}") {
+        fun createRoute(folderPath: String) = "file_browser/$folderPath"
+    }
     object Progress : Screen("progress/{operation}") {
         fun createRoute(operation: String) = "progress/$operation"
     }
@@ -80,6 +83,25 @@ fun AppNavigation(
         }
 
         composable(Screen.FileBrowser.route) {
+            FileBrowserScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToProgress = { operation -> navController.navigate(Screen.Progress.createRoute(operation)) },
+                viewModel = vm
+            )
+        }
+
+        composable(
+            route = Screen.FileBrowserWithFolder.route,
+            arguments = listOf(
+                navArgument("folderPath") { type = NavType.StringType }
+            ),
+            enterTransition = {
+                fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(300))
+            }
+        ) { backStackEntry ->
             FileBrowserScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToProgress = { operation -> navController.navigate(Screen.Progress.createRoute(operation)) },

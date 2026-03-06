@@ -15,6 +15,7 @@ import com.obfs.encrypt.data.SecureDelete
 import com.obfs.encrypt.data.SettingsRepository
 import com.obfs.encrypt.data.createHistoryItem
 import com.obfs.encrypt.data.formatFileSize
+import com.obfs.encrypt.security.AppPasswordManager
 import com.obfs.encrypt.security.BiometricAuthManager
 import com.obfs.encrypt.ui.theme.AppTheme
 import com.obfs.encrypt.ui.theme.ThemeMode
@@ -36,7 +37,8 @@ class MainViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val appDirectoryManager: AppDirectoryManager,
     private val historyRepository: EncryptionHistoryRepository,
-    val biometricAuthManager: BiometricAuthManager
+    val biometricAuthManager: BiometricAuthManager,
+    val appPasswordManager: AppPasswordManager
 ) : AndroidViewModel(application) {
 
     private val _progress = MutableStateFlow(0f)

@@ -105,6 +105,9 @@ dependencies {
     // Biometric authentication
     implementation("androidx.biometric:biometric:1.1.0")
 
+    // Security crypto for encrypted preferences
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     // Coil for image loading with performance optimizations
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")

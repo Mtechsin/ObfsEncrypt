@@ -20,12 +20,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Manages app lock functionality with biometric authentication.
+ * Manages app lock functionality with biometric and password authentication.
  * 
  * Features:
  * - Automatic lock when app is backgrounded
  * - Configurable lock timeout
- * - Biometric authentication unlock
+ * - Biometric or password authentication unlock
  * - State flow for lock status observation
  * 
  * Usage:
@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
  * // In Application class
  * class MyApplication : Application() {
  *     val appLockManager: AppLockManager by lazy {
- *         AppLockManager(this, settingsRepository)
+ *         AppLockManager(this, settingsRepository, appPasswordManager)
  *     }
  *     
  *     override fun onCreate() {
@@ -45,14 +45,16 @@ import kotlinx.coroutines.launch
  * // In Activity/Composable
  * val isLocked by appLockManager.isLocked.collectAsState()
  * if (isLocked) {
- *     BiometricAuthDialog(onAuthSuccess = { appLockManager.unlock() })
+ *     AuthDialog(onAuthSuccess = { appLockManager.unlock() })
  * }
  * ```
  */
 @Singleton
 class AppLockManager @Inject constructor(
     private val application: Application,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val appPasswordManager: AppPasswordManager,
+    private val biometricAuthManager: BiometricAuthManager
 ) : DefaultLifecycleObserver {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -63,6 +65,9 @@ class AppLockManager @Inject constructor(
 
     private val _isLockEnabled = MutableStateFlow(false)
     val isLockEnabled: StateFlow<Boolean> = _isLockEnabled.asStateFlow()
+
+    private val _requirePassword = MutableStateFlow(true)
+    val requirePassword: StateFlow<Boolean> = _requirePassword.asStateFlow()
 
     private var lockTimeoutMs = 0L
     private var backgroundTime = 0L
@@ -87,6 +92,12 @@ class AppLockManager @Inject constructor(
         scope.launch {
             settingsRepository.appLockTimeout.collect { timeout ->
                 lockTimeoutMs = timeout
+            }
+        }
+
+        scope.launch {
+            settingsRepository.appLockRequirePassword.collect { required ->
+                _requirePassword.value = required
             }
         }
     }
@@ -148,7 +159,21 @@ class AppLockManager @Inject constructor(
     }
 
     /**
-     * Enable app lock with biometric authentication.
+     * Check if password is required for unlocking.
+     */
+    fun isPasswordRequired(): Boolean {
+        return _requirePassword.value && appPasswordManager.isPasswordEnabled()
+    }
+
+    /**
+     * Check if biometric is enabled and available.
+     */
+    fun isBiometricEnabled(): Boolean {
+        return appPasswordManager.isPasswordEnabled() && biometricAuthManager.isBiometricEnabled()
+    }
+
+    /**
+     * Enable app lock with password/biometric authentication.
      */
     fun enableAppLock() {
         scope.launch {

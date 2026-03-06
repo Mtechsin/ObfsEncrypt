@@ -8,6 +8,7 @@ import com.obfs.encrypt.data.AppDirectoryManager
 import com.obfs.encrypt.data.EncryptionHistoryRepository
 import com.obfs.encrypt.data.SettingsRepository
 import com.obfs.encrypt.security.AppLockManager
+import com.obfs.encrypt.security.AppPasswordManager
 import com.obfs.encrypt.security.BiometricAuthManager
 import dagger.Module
 import dagger.Provides
@@ -77,8 +78,10 @@ object AppModule {
     @Singleton
     fun provideAppLockManager(
         application: Application,
-        settingsRepository: SettingsRepository
+        settingsRepository: SettingsRepository,
+        appPasswordManager: AppPasswordManager,
+        biometricAuthManager: BiometricAuthManager
     ): AppLockManager {
-        return AppLockManager(application, settingsRepository)
+        return AppLockManager(application, settingsRepository, appPasswordManager, biometricAuthManager)
     }
 }

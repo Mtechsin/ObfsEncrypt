@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,6 +26,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.obfs.encrypt.ui.theme.isAMOLEDTheme
+import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContainerColor
+import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContentColor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -124,13 +128,28 @@ fun PermissionDialog(
         },
         dismissButton = {
             if (showDismiss) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .pressClickEffect()
-                ) {
-                    Text(stringResource(R.string.later))
+                if (isAMOLEDTheme()) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pressClickEffect(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = amoledOutlinedButtonContainerColor(),
+                            contentColor = amoledOutlinedButtonContentColor()
+                        )
+                    ) {
+                        Text(stringResource(R.string.later))
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pressClickEffect()
+                    ) {
+                        Text(stringResource(R.string.later))
+                    }
                 }
             }
         }

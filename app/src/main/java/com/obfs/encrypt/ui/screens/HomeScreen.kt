@@ -176,29 +176,41 @@ fun HomeScreen(
                 val direction = if (targetState > initialState) 1 else -1
 
                 val enter = slideInHorizontally(
-                    initialOffsetX = { fullWidth -> direction * fullWidth / 4 },
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioLowBouncy,
-                        stiffness = Spring.StiffnessMediumLow
-                    )
-                ) + fadeIn(
-                    animationSpec = tween(220, delayMillis = 50)
-                ) + scaleIn(
-                    initialScale = 0.92f,
+                    initialOffsetX = { fullWidth -> direction * fullWidth / 3 },
                     animationSpec = spring(
                         dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ) + fadeIn(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ) + scaleIn(
+                    initialScale = 0.95f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
                     )
                 )
 
                 val exit = slideOutHorizontally(
-                    targetOffsetX = { fullWidth -> -direction * fullWidth / 4 },
-                    animationSpec = tween(200)
+                    targetOffsetX = { fullWidth -> -direction * fullWidth / 3 },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
                 ) + fadeOut(
-                    animationSpec = tween(200)
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
                 ) + scaleOut(
-                    targetScale = 0.92f,
-                    animationSpec = tween(200)
+                    targetScale = 0.95f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
                 )
 
                 enter togetherWith exit using SizeTransform(clip = false)

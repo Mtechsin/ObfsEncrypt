@@ -22,6 +22,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrightnessAuto
@@ -34,23 +47,35 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import com.obfs.encrypt.ui.theme.isAMOLEDTheme
+import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContainerColor
+import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContentColor
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,15 +85,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import com.obfs.encrypt.R
 import com.obfs.encrypt.data.PermissionHelper
+import com.obfs.encrypt.security.AppPasswordManager
 import com.obfs.encrypt.security.BiometricResult
 import com.obfs.encrypt.security.BiometricStatus
 import com.obfs.encrypt.ui.components.AppLockSettingsCard
@@ -104,6 +135,12 @@ fun SettingsScreen(
 
     // App lock timeout selection dialog
     var showTimeoutDialog by remember { mutableStateOf(false) }
+
+    // Password dialogs
+    var showSetPasswordDialog by remember { mutableStateOf(false) }
+    var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var showRemovePasswordDialog by remember { mutableStateOf(false) }
+    var showSecurityQuestionDialog by remember { mutableStateOf(false) }
 
     // Language selection dialog
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -160,7 +197,7 @@ fun SettingsScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface
                 ),
                 modifier = Modifier.padding(bottom = 8.dp)
             )
@@ -193,7 +230,7 @@ fun SettingsScreen(
             // Language Selection
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.clickable { showLanguageDialog = true }
             ) {
                 Row(
@@ -205,7 +242,7 @@ fun SettingsScreen(
                     Icon(
                         imageVector = Icons.Default.Language,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(28.dp)
                     )
                     Spacer(modifier = Modifier.width(16.dp))
@@ -236,7 +273,7 @@ fun SettingsScreen(
 
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Row(
                     modifier = Modifier
@@ -293,6 +330,18 @@ fun SettingsScreen(
             SettingsSectionHeader(title = stringResource(R.string.security))
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Password Authentication
+            PasswordSettingCard(
+                onSetPassword = { showSetPasswordDialog = true },
+                onChangePassword = { showChangePasswordDialog = true },
+                onSetSecurityQuestion = { showSecurityQuestionDialog = true },
+                onRemovePassword = { showRemovePasswordDialog = true },
+                isPasswordSet = viewModel.appPasswordManager.isPasswordSet(),
+                isSecurityQuestionSet = viewModel.appPasswordManager.isSecurityQuestionsEnabled()
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Biometric Authentication
             BiometricSettingCard(viewModel = viewModel)
 
@@ -332,7 +381,7 @@ fun SettingsScreen(
             // Secure Delete
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Row(
                     modifier = Modifier
@@ -367,7 +416,7 @@ fun SettingsScreen(
 
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(
                     modifier = Modifier
@@ -409,7 +458,7 @@ fun SettingsScreen(
 
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(
                     modifier = Modifier
@@ -431,22 +480,46 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = { folderPickerLauncher.launch(null) },
-                            modifier = Modifier.weight(1f),
-                            enabled = hasStoragePermission,
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                            Text(stringResource(R.string.choose))
-                        }
-                        if (outputUri != null) {
+                        if (isAMOLEDTheme()) {
                             OutlinedButton(
-                                onClick = clearOutputDir,
+                                onClick = { folderPickerLauncher.launch(null) },
                                 modifier = Modifier.weight(1f),
+                                enabled = hasStoragePermission,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = amoledOutlinedButtonContainerColor(), contentColor = amoledOutlinedButtonContentColor())
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                                Text(stringResource(R.string.choose))
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = { folderPickerLauncher.launch(null) },
+                                modifier = Modifier.weight(1f),
+                                enabled = hasStoragePermission,
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Text(stringResource(R.string.clear))
+                                Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                                Text(stringResource(R.string.choose))
+                            }
+                        }
+                        if (outputUri != null) {
+                            if (isAMOLEDTheme()) {
+                                OutlinedButton(
+                                    onClick = clearOutputDir,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = amoledOutlinedButtonContainerColor(), contentColor = amoledOutlinedButtonContentColor())
+                                ) {
+                                    Text(stringResource(R.string.clear))
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = clearOutputDir,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text(stringResource(R.string.clear))
+                                }
                             }
                         }
                     }
@@ -480,16 +553,78 @@ fun SettingsScreen(
             onDismiss = { showLanguageDialog = false }
         )
     }
+
+    // Set Password Dialog
+    if (showSetPasswordDialog) {
+        SetPasswordDialog(
+            onPasswordSet = { password ->
+                viewModel.appPasswordManager.setPassword(password)
+                showSetPasswordDialog = false
+            },
+            onDismiss = { showSetPasswordDialog = false }
+        )
+    }
+
+    // Change Password Dialog
+    if (showChangePasswordDialog) {
+        ChangePasswordDialog(
+            appPasswordManager = viewModel.appPasswordManager,
+            onPasswordChanged = { newPassword ->
+                viewModel.appPasswordManager.setPassword(newPassword)
+                showChangePasswordDialog = false
+            },
+            onDismiss = { showChangePasswordDialog = false }
+        )
+    }
+
+    // Remove Password Dialog
+    if (showRemovePasswordDialog) {
+        RemovePasswordDialog(
+            appPasswordManager = viewModel.appPasswordManager,
+            biometricAuthManager = viewModel.biometricAuthManager,
+            onPasswordRemoved = {
+                viewModel.appPasswordManager.clearPassword()
+                viewModel.biometricAuthManager.setBiometricEnabled(false)
+                showRemovePasswordDialog = false
+            },
+            onDismiss = { showRemovePasswordDialog = false }
+        )
+    }
+
+    // Security Question Dialog
+    if (showSecurityQuestionDialog) {
+        SecurityQuestionDialog(
+            appPasswordManager = viewModel.appPasswordManager,
+            onQuestionSet = { question, answer ->
+                viewModel.appPasswordManager.setSecurityQuestion(question, answer)
+                showSecurityQuestionDialog = false
+            },
+            onDismiss = { showSecurityQuestionDialog = false }
+        )
+    }
 }
 
 @Composable
 private fun SettingsSectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Bold
-    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 8.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.3f),
+            modifier = Modifier.width(4.dp).height(24.dp)
+        ) {}
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
 }
 
 @Composable
@@ -501,140 +636,209 @@ private fun ThemeSelectorCard(
     onAppThemeSelected: (AppTheme) -> Unit,
     onDynamicColorChanged: (Boolean) -> Unit
 ) {
+    // Modern card with gradient border effect
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+        shadowElevation = 8.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(24.dp)
         ) {
-            Text(
-                text = stringResource(R.string.theme),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.choose_appearance),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(16.dp))
+            // Header with icon badge
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Icon badge with gradient
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.theme),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.choose_appearance),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
-            // Dynamic Color (Material You) toggle
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Dynamic Color (Material You) toggle with animation
             DynamicColorToggle(
                 enabled = dynamicColor,
                 onEnabledChanged = onDynamicColorChanged
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // Animated container for Theme Color Picker
+            AnimatedVisibility(
+                visible = !dynamicColor,
+                enter = fadeIn(animationSpec = tween(300)) +
+                        slideInVertically(
+                            animationSpec = tween(300),
+                            initialOffsetY = { -20 }
+                        ) +
+                        expandVertically(
+                            animationSpec = tween(300),
+                            expandFrom = Alignment.Top
+                        ),
+                exit = fadeOut(animationSpec = tween(200)) +
+                        slideOutVertically(
+                            animationSpec = tween(200),
+                            targetOffsetY = { -20 }
+                        ) +
+                        shrinkVertically(
+                            animationSpec = tween(200),
+                            shrinkTowards = Alignment.Top
+                        )
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(24.dp))
 
-            // Theme Color Picker
-            Text(
-                text = stringResource(R.string.theme_color),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.select_theme_color),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+                    // Section divider with label
+                    DividerWithLabel(label = stringResource(R.string.theme_color))
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Theme Color Picker Section
+                    Text(
+                        text = stringResource(R.string.select_theme_color),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    ThemeColorPicker(
+                        selectedTheme = currentAppTheme,
+                        onThemeSelected = onAppThemeSelected
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Divider
+            ModernDivider()
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Theme Mode Selection
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BrightnessAuto,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.width(12.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.theme_mode),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.choose_theme_mode),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             
-            ThemeColorPicker(
-                selectedTheme = currentAppTheme,
-                onThemeSelected = onAppThemeSelected
-            )
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            ThemeOption(
-                title = stringResource(R.string.light),
-                icon = Icons.Default.LightMode,
-                isSelected = currentMode == ThemeMode.LIGHT,
-                onClick = { onModeSelected(ThemeMode.LIGHT) }
-            )
-            ThemeOption(
-                title = stringResource(R.string.dark),
-                icon = Icons.Default.DarkMode,
-                isSelected = currentMode == ThemeMode.DARK,
-                onClick = { onModeSelected(ThemeMode.DARK) }
-            )
-            ThemeOption(
-                title = stringResource(R.string.system),
-                subtitle = stringResource(R.string.follow_device_settings),
-                icon = Icons.Default.BrightnessAuto,
-                isSelected = currentMode == ThemeMode.SYSTEM,
-                onClick = { onModeSelected(ThemeMode.SYSTEM) }
+            ThemeModeSelector(
+                currentMode = currentMode,
+                onModeSelected = onModeSelected
             )
         }
     }
 }
 
 @Composable
-private fun ThemeOption(
-    title: String,
-    subtitle: String? = null,
-    icon: ImageVector,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
+private fun DividerWithLabel(label: String) {
     Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        ) {}
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        ) {}
+    }
+}
+
+@Composable
+private fun ModernDivider() {
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .background(
-                if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                else MaterialTheme.colorScheme.surface
-            )
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(
-                    if (isSelected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.surfaceVariant
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-        Spacer(modifier = Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        RadioButton(
-            selected = isSelected,
-            onClick = onClick
-        )
-    }
+            .height(2.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    ) {}
 }
 
 @Composable
@@ -642,65 +846,133 @@ private fun DynamicColorToggle(
     enabled: Boolean,
     onEnabledChanged: (Boolean) -> Unit
 ) {
+    // Animate background gradient
+    val backgroundGradient = if (enabled) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+            )
+        )
+    } else {
+        Brush.horizontalGradient(
+            colors = listOf(
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.4f)
+            )
+        )
+    }
+
+    // Animate icon background
+    val iconBackground by animateColorAsState(
+        targetValue = if (enabled) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        animationSpec = tween(300),
+        label = "iconBackground"
+    )
+
+    // Animate icon tint
+    val iconTint by animateColorAsState(
+        targetValue = if (enabled) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(300),
+        label = "iconTint"
+    )
+
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp)),
-        color = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                else MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(12.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        shadowElevation = if (enabled) 8.dp else 2.dp,
+        border = if (enabled) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        }
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .background(backgroundGradient)
+                .padding(20.dp)
         ) {
             Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (enabled) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                    contentAlignment = Alignment.Center
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Palette,
-                        contentDescription = null,
-                        tint = if (enabled) MaterialTheme.colorScheme.onPrimary
-                               else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    // Icon with gradient ring
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(iconBackground),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column {
+                        Text(
+                            text = stringResource(R.string.material_you),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (enabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                        Text(
+                            text = stringResource(R.string.adapt_colors),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.material_you),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.adapt_colors),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+
+                // Modern Toggle Switch
+                ModernToggleSwitch(
+                    enabled = enabled,
+                    onEnabledChanged = onEnabledChanged
+                )
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Switch(
-                checked = enabled,
-                onCheckedChange = onEnabledChanged
-            )
         }
     }
+}
+
+@Composable
+private fun ModernToggleSwitch(
+    enabled: Boolean,
+    onEnabledChanged: (Boolean) -> Unit
+) {
+    Switch(
+        checked = enabled,
+        onCheckedChange = onEnabledChanged,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+            checkedTrackColor = MaterialTheme.colorScheme.primary,
+            uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    )
 }
 
 @Composable
@@ -708,51 +980,104 @@ private fun ThemeColorPicker(
     selectedTheme: AppTheme,
     onThemeSelected: (AppTheme) -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Default (Blue for dark, Lemon for light)
-        ThemeColorOption(
-            color = Color(0xFF64B5F6),
-            isSelected = selectedTheme == AppTheme.DEFAULT,
-            onClick = { onThemeSelected(AppTheme.DEFAULT) }
-        )
-        // Red
-        ThemeColorOption(
-            color = Color(0xFFEF5350),
-            isSelected = selectedTheme == AppTheme.RED,
-            onClick = { onThemeSelected(AppTheme.RED) }
-        )
-        // Green
-        ThemeColorOption(
-            color = Color(0xFF81C784),
-            isSelected = selectedTheme == AppTheme.GREEN,
-            onClick = { onThemeSelected(AppTheme.GREEN) }
-        )
-        // Orange
-        ThemeColorOption(
-            color = Color(0xFFFFB74D),
-            isSelected = selectedTheme == AppTheme.ORANGE,
-            onClick = { onThemeSelected(AppTheme.ORANGE) }
-        )
-        // Navy
-        ThemeColorOption(
-            color = Color(0xFF42A5F5),
-            isSelected = selectedTheme == AppTheme.NAVY,
-            onClick = { onThemeSelected(AppTheme.NAVY) }
-        )
+        // First row - 3 colors
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Default (Blue for dark, Lemon for light)
+            ThemeColorOption(
+                color = Color(0xFF64B5F6),
+                label = stringResource(R.string.theme_default),
+                isSelected = selectedTheme == AppTheme.DEFAULT,
+                onClick = { onThemeSelected(AppTheme.DEFAULT) },
+                modifier = Modifier.weight(1f)
+            )
+            // Red
+            ThemeColorOption(
+                color = Color(0xFFEF5350),
+                label = stringResource(R.string.theme_red),
+                isSelected = selectedTheme == AppTheme.RED,
+                onClick = { onThemeSelected(AppTheme.RED) },
+                modifier = Modifier.weight(1f)
+            )
+            // Green
+            ThemeColorOption(
+                color = Color(0xFF81C784),
+                label = stringResource(R.string.theme_green),
+                isSelected = selectedTheme == AppTheme.GREEN,
+                onClick = { onThemeSelected(AppTheme.GREEN) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        
+        // Second row - 3 colors
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Orange
+            ThemeColorOption(
+                color = Color(0xFFFFB74D),
+                label = stringResource(R.string.theme_orange),
+                isSelected = selectedTheme == AppTheme.ORANGE,
+                onClick = { onThemeSelected(AppTheme.ORANGE) },
+                modifier = Modifier.weight(1f)
+            )
+            // Navy
+            ThemeColorOption(
+                color = Color(0xFF42A5F5),
+                label = stringResource(R.string.theme_navy),
+                isSelected = selectedTheme == AppTheme.NAVY,
+                onClick = { onThemeSelected(AppTheme.NAVY) },
+                modifier = Modifier.weight(1f)
+            )
+            // AMOLED (Muted purple with dark background)
+            ThemeColorOption(
+                color = Color(0xFF9575CD),
+                label = stringResource(R.string.theme_amoled),
+                isSelected = selectedTheme == AppTheme.AMOLED,
+                onClick = { onThemeSelected(AppTheme.AMOLED) },
+                modifier = Modifier.weight(1f),
+                isAMOLED = true
+            )
+        }
     }
-    Spacer(modifier = Modifier.height(8.dp))
+}
+
+@Composable
+private fun ThemeModeSelector(
+    currentMode: ThemeMode,
+    onModeSelected: (ThemeMode) -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // AMOLED (Pure black with neon accents)
-        ThemeColorOption(
-            color = Color(0xFF7C4DFF),
-            isSelected = selectedTheme == AppTheme.AMOLED,
-            onClick = { onThemeSelected(AppTheme.AMOLED) }
+        ThemeModeChip(
+            title = stringResource(R.string.light),
+            icon = Icons.Default.LightMode,
+            isSelected = currentMode == ThemeMode.LIGHT,
+            onClick = { onModeSelected(ThemeMode.LIGHT) },
+            modifier = Modifier.weight(1f)
+        )
+        ThemeModeChip(
+            title = stringResource(R.string.dark),
+            icon = Icons.Default.DarkMode,
+            isSelected = currentMode == ThemeMode.DARK,
+            onClick = { onModeSelected(ThemeMode.DARK) },
+            modifier = Modifier.weight(1f)
+        )
+        ThemeModeChip(
+            title = stringResource(R.string.system),
+            icon = Icons.Default.BrightnessAuto,
+            isSelected = currentMode == ThemeMode.SYSTEM,
+            onClick = { onModeSelected(ThemeMode.SYSTEM) },
+            modifier = Modifier.weight(1f)
         )
     }
 }
@@ -760,37 +1085,167 @@ private fun ThemeColorPicker(
 @Composable
 private fun ThemeColorOption(
     color: Color,
+    label: String,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isAMOLED: Boolean = false
 ) {
-    val borderStroke = if (isSelected) 3.dp else 0.dp
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent
+    // Animate size change
+    val circleSize by animateDpAsState(
+        targetValue = if (isSelected) 50.dp else 48.dp,
+        animationSpec = tween(200),
+        label = "circleSize"
+    )
     
-    Box(
-        modifier = Modifier
-            .size(48.dp)
+    // Animate border width
+    val borderWidth by animateDpAsState(
+        targetValue = if (isSelected) 3.dp else 1.dp,
+        animationSpec = tween(200),
+        label = "borderWidth"
+    )
+    
+    // Animate shadow elevation
+    val elevation by animateDpAsState(
+        targetValue = if (isSelected) 4.dp else 2.dp,
+        animationSpec = tween(200),
+        label = "elevation"
+    )
+    
+    // Animate selection ring alpha
+    val ringAlpha by animateFloatAsState(
+        targetValue = if (isSelected) 1f else 0f,
+        animationSpec = tween(200),
+        label = "ringAlpha"
+    )
+    
+    // Animate label color
+    val labelColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(200),
+        label = "labelColor"
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
             .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Surface(
-            modifier = Modifier.size(44.dp),
-            shape = CircleShape,
-            color = color,
-            border = BorderStroke(borderStroke, borderColor)
+        Box(
+            modifier = Modifier
+                .size(56.dp),
+            contentAlignment = Alignment.Center
         ) {
+            // Selection ring with fade animation
             if (isSelected) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
+                Surface(
+                    modifier = Modifier.size(56.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                ) {}
+            }
+            
+            // Color circle with animated size and border
+            Surface(
+                modifier = Modifier.size(circleSize),
+                shape = CircleShape,
+                color = if (isAMOLED) Color.Black else color,
+                border = BorderStroke(
+                    borderWidth,
+                    if (isSelected) color else MaterialTheme.colorScheme.outlineVariant
+                ),
+                shadowElevation = elevation
+            ) {
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Label with animated color
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = labelColor,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
+private fun ThemeModeChip(
+    title: String,
+    icon: ImageVector,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        animationSpec = tween(200),
+        label = "chipBackground"
+    )
+
+    val contentColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(200),
+        label = "chipContent"
+    )
+
+    Surface(
+        modifier = modifier
+            .height(72.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = backgroundColor,
+        shadowElevation = if (isSelected) 4.dp else 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = contentColor,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+            )
         }
     }
 }
@@ -803,21 +1258,38 @@ private fun BiometricSettingCard(viewModel: MainViewModel) {
     
     val biometricStatus = viewModel.biometricAuthManager.canAuthenticate()
     val isEnabled = viewModel.biometricAuthManager.isBiometricEnabled()
+    val isPasswordSet = viewModel.appPasswordManager.isPasswordSet()
+    val isBiometricAvailable = biometricStatus == BiometricStatus.AVAILABLE
     
-    val statusText = when (biometricStatus) {
-        BiometricStatus.AVAILABLE -> stringResource(R.string.biometric_auth_subtitle)
-        BiometricStatus.NO_HARDWARE -> context.getString(R.string.not_available) // Could add more specific strings if needed
-        BiometricStatus.HW_UNAVAILABLE -> context.getString(R.string.not_available)
-        BiometricStatus.NOT_ENROLLED -> context.getString(R.string.not_available)
-        BiometricStatus.UNKNOWN -> context.getString(R.string.not_available)
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    
+    val statusText = when {
+        !isPasswordSet -> stringResource(R.string.set_password_first)
+        isBiometricAvailable -> stringResource(R.string.biometric_auth_subtitle)
+        biometricStatus == BiometricStatus.NO_HARDWARE -> context.getString(R.string.not_available)
+        biometricStatus == BiometricStatus.HW_UNAVAILABLE -> context.getString(R.string.not_available)
+        biometricStatus == BiometricStatus.NOT_ENROLLED -> context.getString(R.string.not_available)
+        else -> context.getString(R.string.not_available)
     }
     
-    val isAvailable = biometricStatus == BiometricStatus.AVAILABLE
+    val isAvailable = isBiometricAvailable && isPasswordSet
+    
+    if (showPasswordDialog) {
+        PasswordAuthDialog(
+            appPasswordManager = viewModel.appPasswordManager,
+            onAuthSuccess = { password ->
+                viewModel.biometricAuthManager.storePasswordWithBiometric(password.toCharArray())
+                viewModel.biometricAuthManager.setBiometricEnabled(true)
+                showPasswordDialog = false
+            },
+            onDismiss = { showPasswordDialog = false }
+        )
+    }
     
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = if (isAvailable) MaterialTheme.colorScheme.surfaceContainerHighest 
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        color = if (isAvailable) MaterialTheme.colorScheme.primaryContainer 
+                else MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(
             modifier = Modifier
@@ -853,21 +1325,223 @@ private fun BiometricSettingCard(viewModel: MainViewModel) {
                     checked = isEnabled && isAvailable,
                     onCheckedChange = { enabled ->
                         if (isAvailable) {
-                            scope.launch {
-                                // Authenticate before enabling
-                                val result = viewModel.biometricAuthManager.authenticate(
-                                    activity = activity,
-                                    title = context.getString(R.string.enable_biometric),
-                                    subtitle = context.getString(R.string.biometric_auth_subtitle)
-                                )
-                                if (result is BiometricResult.Success) {
-                                    viewModel.biometricAuthManager.setBiometricEnabled(enabled)
-                                }
+                            if (enabled) {
+                                showPasswordDialog = true
+                            } else {
+                                viewModel.biometricAuthManager.setBiometricEnabled(false)
+                                viewModel.biometricAuthManager.clearStoredPassword()
                             }
                         }
                     },
                     enabled = isAvailable
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PasswordAuthDialog(
+    appPasswordManager: AppPasswordManager,
+    onAuthSuccess: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        },
+        title = {
+            Text(stringResource(R.string.authenticate))
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.enter_password_to_enable_biometric),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = {
+                        password = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.password)) },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (appPasswordManager.verifyPassword(password)) {
+                        onAuthSuccess(password)
+                    } else {
+                        error = context.getString(R.string.incorrect_password)
+                    }
+                }
+            ) {
+                Text(stringResource(R.string.enable_biometric))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun PasswordSettingCard(
+    onSetPassword: () -> Unit,
+    onChangePassword: () -> Unit,
+    onSetSecurityQuestion: () -> Unit,
+    onRemovePassword: () -> Unit,
+    isPasswordSet: Boolean,
+    isSecurityQuestionSet: Boolean
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.app_password),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (isPasswordSet) stringResource(R.string.password_set_desc) 
+                               else stringResource(R.string.password_not_set_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (isPasswordSet) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isAMOLEDTheme()) {
+                        OutlinedButton(
+                            onClick = onChangePassword,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = amoledOutlinedButtonContainerColor(), contentColor = amoledOutlinedButtonContentColor())
+                        ) {
+                            Text(stringResource(R.string.change_password))
+                        }
+                        OutlinedButton(
+                            onClick = onRemovePassword,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = amoledOutlinedButtonContainerColor(), contentColor = amoledOutlinedButtonContentColor())
+                        ) {
+                            Text(stringResource(R.string.remove))
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = onChangePassword,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(stringResource(R.string.change_password))
+                        }
+                        OutlinedButton(
+                            onClick = onRemovePassword,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(stringResource(R.string.remove))
+                        }
+                    }
+                }
+
+                if (!isSecurityQuestionSet) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (isAMOLEDTheme()) {
+                        OutlinedButton(
+                            onClick = onSetSecurityQuestion,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = amoledOutlinedButtonContainerColor(), contentColor = amoledOutlinedButtonContentColor())
+                        ) {
+                            Text(stringResource(R.string.set_security_question))
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = onSetSecurityQuestion,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(stringResource(R.string.set_security_question))
+                        }
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onSetPassword,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text(stringResource(R.string.set_password))
+                }
             }
         }
     }
@@ -893,7 +1567,7 @@ private fun KeyfileSettingCard(viewModel: MainViewModel) {
     
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest
+        color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(
             modifier = Modifier
@@ -907,7 +1581,7 @@ private fun KeyfileSettingCard(viewModel: MainViewModel) {
                 Icon(
                     imageVector = Icons.Default.VpnKey,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(28.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
@@ -926,18 +1600,34 @@ private fun KeyfileSettingCard(viewModel: MainViewModel) {
             }
             
             Spacer(modifier = Modifier.height(12.dp))
-            
-            OutlinedButton(
-                onClick = { folderPickerLauncher.launch(null) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Icon(
-                    Icons.Default.Security, 
-                    contentDescription = null, 
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-                Text(stringResource(R.string.generate_new_keyfile))
+
+            if (isAMOLEDTheme()) {
+                OutlinedButton(
+                    onClick = { folderPickerLauncher.launch(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = amoledOutlinedButtonContainerColor(), contentColor = amoledOutlinedButtonContentColor())
+                ) {
+                    Icon(
+                        Icons.Default.Security,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text(stringResource(R.string.generate_new_keyfile))
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { folderPickerLauncher.launch(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Security,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text(stringResource(R.string.generate_new_keyfile))
+                }
             }
         }
     }
@@ -964,7 +1654,7 @@ private fun AppLockTimeoutDialog(
             Icon(
                 imageVector = Icons.Default.Lock,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
             )
         },
         title = {
@@ -1022,7 +1712,7 @@ private fun LanguageSelectionDialog(
             Icon(
                 imageVector = Icons.Default.Language,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
             )
         },
         title = {
@@ -1055,6 +1745,474 @@ private fun LanguageSelectionDialog(
             }
         },
         confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun SetPasswordDialog(
+    onPasswordSet: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        },
+        title = {
+            Text(stringResource(R.string.set_password))
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = {
+                        password = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.new_password)) },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = confirmPassword,
+                    onValueChange = {
+                        confirmPassword = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.confirm_password)) },
+                    singleLine = true,
+                    visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                            Icon(
+                                imageVector = if (confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    when {
+                        password.isEmpty() -> {
+                            error = context.getString(R.string.password_cannot_be_empty)
+                        }
+                        password != confirmPassword -> {
+                            error = context.getString(R.string.passwords_do_not_match)
+                        }
+                        else -> {
+                            onPasswordSet(password)
+                        }
+                    }
+                }
+            ) {
+                Text(stringResource(R.string.set_password))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun ChangePasswordDialog(
+    appPasswordManager: AppPasswordManager,
+    onPasswordChanged: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        },
+        title = {
+            Text(stringResource(R.string.change_password))
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = currentPassword,
+                    onValueChange = {
+                        currentPassword = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.current_password)) },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = {
+                        newPassword = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.new_password)) },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = confirmPassword,
+                    onValueChange = {
+                        confirmPassword = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.confirm_password)) },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    when {
+                        !appPasswordManager.verifyPassword(currentPassword) -> {
+                            error = context.getString(R.string.incorrect_password)
+                        }
+                        newPassword.isEmpty() -> {
+                            error = context.getString(R.string.password_cannot_be_empty)
+                        }
+                        newPassword != confirmPassword -> {
+                            error = context.getString(R.string.passwords_do_not_match)
+                        }
+                        else -> {
+                            onPasswordChanged(newPassword)
+                        }
+                    }
+                }
+            ) {
+                Text(stringResource(R.string.change_password))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun RemovePasswordDialog(
+    appPasswordManager: AppPasswordManager,
+    biometricAuthManager: com.obfs.encrypt.security.BiometricAuthManager,
+    onPasswordRemoved: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var currentPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Security,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = {
+            Text(stringResource(R.string.remove_password))
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.remove_password_warning),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = currentPassword,
+                    onValueChange = {
+                        currentPassword = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.current_password)) },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (appPasswordManager.verifyPassword(currentPassword)) {
+                        onPasswordRemoved()
+                    } else {
+                        error = context.getString(R.string.incorrect_password)
+                    }
+                },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text(stringResource(R.string.remove))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+private val securityQuestions = listOf(
+    "What is your mother's maiden name?",
+    "What was the name of your first pet?",
+    "What city were you born in?",
+    "What is the name of your favorite childhood friend?",
+    "What is the name of your first school?",
+    "What is your favorite movie?",
+    "What is your favorite color?",
+    "What is the name of your favorite teacher?"
+)
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun SecurityQuestionDialog(
+    appPasswordManager: AppPasswordManager,
+    onQuestionSet: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var selectedQuestion by remember { mutableStateOf(securityQuestions[0]) }
+    var customQuestion by remember { mutableStateOf("") }
+    var answer by remember { mutableStateOf("") }
+    var confirmAnswer by remember { mutableStateOf("") }
+    var showCustomQuestion by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var expanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Security,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        },
+        title = {
+            Text(stringResource(R.string.set_security_question))
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (showCustomQuestion) {
+                    OutlinedTextField(
+                        value = customQuestion,
+                        onValueChange = { customQuestion = it },
+                        label = { Text(stringResource(R.string.custom_question)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = !expanded }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedQuestion,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.select_question)) },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            securityQuestions.forEach { question ->
+                                DropdownMenuItem(
+                                    text = { Text(question) },
+                                    onClick = {
+                                        selectedQuestion = question
+                                        expanded = false
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.custom_question_option)) },
+                                onClick = {
+                                    showCustomQuestion = true
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = answer,
+                    onValueChange = {
+                        answer = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.your_answer)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = confirmAnswer,
+                    onValueChange = {
+                        confirmAnswer = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.confirm_answer)) },
+                    singleLine = true,
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val question = if (showCustomQuestion) customQuestion else selectedQuestion
+                    when {
+                        question.isEmpty() -> {
+                            error = context.getString(R.string.question_required)
+                        }
+                        answer.isEmpty() -> {
+                            error = context.getString(R.string.answer_required)
+                        }
+                        answer.lowercase().trim() != confirmAnswer.lowercase().trim() -> {
+                            error = context.getString(R.string.answers_do_not_match)
+                        }
+                        else -> {
+                            onQuestionSet(question, answer)
+                        }
+                    }
+                }
+            ) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.cancel))
             }

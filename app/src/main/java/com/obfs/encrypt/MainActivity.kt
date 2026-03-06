@@ -25,7 +25,7 @@ import com.obfs.encrypt.performance.CoilImageLoader
 import com.obfs.encrypt.performance.MemoryManager
 import com.obfs.encrypt.performance.MemoryManager.Companion.isMemoryLow
 import com.obfs.encrypt.performance.memoryManager
-import com.obfs.encrypt.ui.components.BiometricAuthDialog
+import com.obfs.encrypt.ui.components.AuthDialog
 import com.obfs.encrypt.ui.components.PermissionDialog
 import com.obfs.encrypt.ui.components.PermissionGrantedDialog
 import androidx.activity.viewModels
@@ -35,6 +35,7 @@ import com.obfs.encrypt.ui.screens.AppDirectoryManagerInstanceHolder
 import com.obfs.encrypt.ui.theme.ObfsEncryptTheme
 import com.obfs.encrypt.ui.utils.LanguageManager
 import com.obfs.encrypt.security.AppLockManager
+import com.obfs.encrypt.security.AppPasswordManager
 import com.obfs.encrypt.security.BiometricAuthManager
 import com.obfs.encrypt.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -50,6 +51,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var appLockManager: AppLockManager
+
+    @Inject
+    lateinit var appPasswordManager: AppPasswordManager
 
     @Inject
     lateinit var biometricAuthManager: BiometricAuthManager
@@ -193,10 +197,11 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
 
-                if (showBiometricDialog && biometricAuthManager.isBiometricAvailable()) {
-                    BiometricAuthDialog(
-                        biometricAuthManager = biometricAuthManager,
+                if (showBiometricDialog) {
+                    AuthDialog(
+                        appPasswordManager = appPasswordManager,
                         appLockManager = appLockManager,
+                        biometricAuthManager = biometricAuthManager,
                         onDismiss = {
                             showBiometricDialog = false
                         },

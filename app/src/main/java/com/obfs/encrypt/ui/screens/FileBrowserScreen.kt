@@ -2,6 +2,7 @@ package com.obfs.encrypt.ui.screens
 
 import android.Manifest
 import android.content.Intent
+import java.io.File
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -11,6 +12,20 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateRectAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Search
@@ -54,11 +70,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -107,6 +130,26 @@ fun FileBrowserScreen(
         )
     }
 
+    // Track folder expansion/collapse animation
+    var expandingFolderPath by remember { mutableStateOf<String?>(null) }
+    var collapsingFolderPath by remember { mutableStateOf<String?>(null) }
+    
+    // Track the bounds of the folder item being expanded (for shared element animation)
+    var expandingFolderBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+    // Animation state for folder expansion
+    val expansionProgress by animateFloatAsState(
+        targetValue = if (expandingFolderPath != null) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "folder_expansion"
+    )
+    
+    // Track previous directory for collapse animation
+    var previousDirectory by remember { mutableStateOf<File?>(null) }
+
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedFilter by rememberSaveable { mutableStateOf(FileFilter.ALL) }
@@ -122,6 +165,20 @@ fun FileBrowserScreen(
     val isLoading by fileManagerViewModel.isLoading.collectAsState()
     val sortOrder by fileManagerViewModel.sortOrder.collectAsState()
     val sortAscending by fileManagerViewModel.sortAscending.collectAsState()
+
+    // Track directory changes for collapse animation
+    LaunchedEffect(currentDirectory) {
+        if (collapsingFolderPath != null) {
+            // We're collapsing, wait for animation then reset
+            delay(600)
+            collapsingFolderPath = null
+        }
+        // When navigating to a new folder during expansion, trigger collapse animation
+        if (expandingFolderPath != null && currentDirectory?.absolutePath != expandingFolderPath) {
+            // Expansion completed, new directory is loaded
+        }
+        previousDirectory = currentDirectory
+    }
 
     val isDecryptionMode by remember {
         derivedStateOf {
@@ -278,7 +335,16 @@ fun FileBrowserScreen(
                         IconButton(
                             onClick = {
                                 haptic.click()
-                                onNavigateBack()
+                                // Trigger collapse animation if we have a previous directory
+                                if (previousDirectory != null && currentDirectory != previousDirectory) {
+                                    collapsingFolderPath = currentDirectory.absolutePath
+                                    scope.launch {
+                                        delay(300)
+                                        onNavigateBack()
+                                    }
+                                } else {
+                                    onNavigateBack()
+                                }
                             }
                         ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
@@ -517,9 +583,7 @@ fun FileBrowserScreen(
                 favoritePaths = favoritePaths,
                 onFileClick = { item ->
                     haptic.click()
-                    if (item.isDirectory) {
-                        fileManagerViewModel.navigateTo(item.file)
-                    } else {
+                    if (!item.isDirectory) {
                         // Click on name/row selects the file
                         fileManagerViewModel.toggleSelection(item.file)
                     }
@@ -534,6 +598,20 @@ fun FileBrowserScreen(
                     // Click on image thumbnail opens preview
                     haptic.click()
                     previewFileItem = item
+                },
+                onFolderClick = { item, bounds ->
+                    haptic.click()
+                    // Capture folder bounds for animation
+                    expandingFolderPath = item.file.absolutePath
+                    expandingFolderBounds = bounds
+                    // Navigate immediately so content appears during morph transition
+                    scope.launch {
+                        fileManagerViewModel.navigateTo(item.file)
+                        // Reset expansion state after animation completes
+                        delay(600)
+                        expandingFolderPath = null
+                        expandingFolderBounds = null
+                    }
                 },
                 onToggleSelect = { file ->
                     haptic.click()
@@ -646,6 +724,216 @@ fun FileBrowserScreen(
             onDismiss = { previewFileItem = null }
         )
     }
+
+    // Folder expansion animation overlay - morph transition from folder position
+    if (expandingFolderPath != null) {
+        FolderExpansionOverlay(
+            folderPath = expandingFolderPath!!,
+            folderBounds = expandingFolderBounds,
+            expansionProgress = expansionProgress,
+            isExpanding = true
+        )
+    }
+
+    // Folder collapse animation overlay - morph transition back
+    if (collapsingFolderPath != null) {
+        FolderExpansionOverlay(
+            folderPath = collapsingFolderPath!!,
+            folderBounds = null, // Collapse from center
+            expansionProgress = 1f - expansionProgress,
+            isExpanding = false
+        )
+    }
+}
+
+/**
+ * Folder expansion/collapse morph transition.
+ * Creates a smooth shared-element-like transition where the folder item
+ * expands from its position to reveal the new screen content.
+ */
+@Composable
+private fun FolderExpansionOverlay(
+    folderPath: String,
+    folderBounds: Rect?,
+    expansionProgress: Float,
+    isExpanding: Boolean
+) {
+    val folderName = folderPath.substringAfterLast('/').ifEmpty { folderPath }
+    val density = LocalDensity.current
+    val screenWidth = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+    val screenHeight = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+
+    // Calculate start position from bounds or default to center
+    val startX = folderBounds?.let { (it.left + it.right) / 2 } ?: screenWidth / 2
+    val startY = folderBounds?.let { (it.top + it.bottom) / 2 } ?: screenHeight / 3
+    val startWidth = folderBounds?.width ?: 100f
+    val startHeight = folderBounds?.height ?: 72f
+
+    // Calculate scale from the folder item size to fill most of screen (not full)
+    val targetScaleX = 0.95f  // Don't scale to full screen width
+    val targetScaleY = 0.90f  // Don't scale to full screen height
+    val scaleX = lerp(startWidth / screenWidth, targetScaleX, expansionProgress.coerceIn(0f, 1f))
+    val scaleY = lerp(startHeight / screenHeight, targetScaleY, expansionProgress.coerceIn(0f, 1f))
+
+    // Corner radius animation: starts rounded (like folder icon) to less rounded
+    val cornerRadius by animateFloatAsState(
+        targetValue = if (isExpanding) {
+            lerp(16f, 8f, expansionProgress.coerceIn(0f, 1f))
+        } else {
+            lerp(8f, 16f, expansionProgress.coerceIn(0f, 1f))
+        }.coerceAtLeast(0f),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "expansion_corner"
+    )
+
+    // Border width that shrinks as we expand
+    val borderWidth by animateFloatAsState(
+        targetValue = if (isExpanding) {
+            lerp(2f, 0f, expansionProgress.coerceIn(0f, 1f))
+        } else {
+            lerp(0f, 2f, expansionProgress.coerceIn(0f, 1f))
+        },
+        animationSpec = tween(250),
+        label = "expansion_border"
+    )
+
+    // Icon scale with bounce - shrinks as container expands
+    val iconScale by animateFloatAsState(
+        targetValue = if (isExpanding) {
+            lerp(1f, 0.6f, expansionProgress.coerceIn(0f, 1f))
+        } else {
+            lerp(0.6f, 1f, expansionProgress.coerceIn(0f, 1f))
+        },
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "expansion_icon_scale"
+    )
+
+    // Icon alpha - fades out as we transition
+    val iconAlpha by animateFloatAsState(
+        targetValue = if (isExpanding) {
+            if (expansionProgress > 0.7f) 0f else 1f
+        } else {
+            if (expansionProgress > 0.3f) 1f else 0f
+        },
+        animationSpec = tween(200),
+        label = "expansion_icon_alpha"
+    )
+
+    // Text alpha - fades out during transition
+    val textAlpha by animateFloatAsState(
+        targetValue = if (isExpanding) {
+            if (expansionProgress > 0.6f) 0f else 1f
+        } else {
+            if (expansionProgress > 0.4f) 1f else 0f
+        },
+        animationSpec = tween(200),
+        label = "expansion_text_alpha"
+    )
+
+    // Overall overlay alpha - subtle background dim
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (isExpanding) {
+            expansionProgress * 0.5f  // Max 50% opacity for subtle dim
+        } else {
+            (1f - expansionProgress) * 0.5f
+        },
+        animationSpec = tween(300),
+        label = "expansion_overlay_alpha"
+    )
+
+    // Content alpha for the morphing container
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (isExpanding) {
+            if (expansionProgress > 0.8f) 0f else 1f
+        } else {
+            if (expansionProgress > 0.2f) 1f else 0f
+        },
+        animationSpec = tween(250),
+        label = "expansion_content_alpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                this.alpha = overlayAlpha
+            }
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.3f)),
+        contentAlignment = Alignment.Center
+    ) {
+        // Morphing container that expands from folder position
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    // Scale from the folder position
+                    transformOrigin = TransformOrigin(
+                        pivotFractionX = (startX / screenWidth).coerceIn(0f, 1f),
+                        pivotFractionY = (startY / screenHeight).coerceIn(0f, 1f)
+                    )
+                    this.scaleX = scaleX
+                    this.scaleY = scaleY
+                    this.alpha = contentAlpha
+                    shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0f).dp)
+                    clip = true
+                }
+                .border(
+                    width = borderWidth.dp,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0f).dp)
+                )
+                .background(
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+                )
+        ) {
+            // Folder icon and name that fade out during transition
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Folder icon with scale animation
+                Icon(
+                    imageVector = Icons.Filled.Folder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .graphicsLayer {
+                            this.scaleX = iconScale
+                            this.scaleY = iconScale
+                            this.alpha = iconAlpha
+                        }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Folder name with fade animation
+                Text(
+                    text = folderName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.graphicsLayer {
+                        alpha = textAlpha
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Linear interpolation helper for smooth animations.
+ */
+private fun lerp(start: Float, stop: Float, fraction: Float): Float {
+    return start + (stop - start) * fraction
 }
 
 private fun isTextFile(fileName: String): Boolean {

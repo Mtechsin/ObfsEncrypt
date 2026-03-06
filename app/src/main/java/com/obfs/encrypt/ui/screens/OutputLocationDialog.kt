@@ -40,6 +40,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.obfs.encrypt.ui.theme.isAMOLEDTheme
+import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContainerColor
+import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContentColor
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -214,16 +217,34 @@ fun OutputLocationDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(
-                                    1.5.dp,
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                                )
-                            ) {
-                                Text(stringResource(R.string.cancel), fontWeight = FontWeight.Medium)
+                            if (isAMOLEDTheme()) {
+                                OutlinedButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = amoledOutlinedButtonContainerColor(),
+                                        contentColor = amoledOutlinedButtonContentColor()
+                                    ),
+                                    border = BorderStroke(
+                                        1.5.dp,
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                    )
+                                ) {
+                                    Text(stringResource(R.string.cancel), fontWeight = FontWeight.Medium)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(
+                                        1.5.dp,
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                    )
+                                ) {
+                                    Text(stringResource(R.string.cancel), fontWeight = FontWeight.Medium)
+                                }
                             }
 
                             Button(

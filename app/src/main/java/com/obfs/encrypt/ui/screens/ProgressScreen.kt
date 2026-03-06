@@ -32,12 +32,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import com.obfs.encrypt.ui.theme.isAMOLEDTheme
+import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContainerColor
+import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContentColor
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -220,19 +224,36 @@ fun ProgressScreen(
                         color = MaterialTheme.colorScheme.error
                     )
                     Spacer(modifier = Modifier.height(48.dp))
-                    FilledTonalButton(
-                        onClick = onNavigateBack,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .pressClickEffect(),
-                        shape = MaterialTheme.shapes.large
-                    ) {
-                        Text(stringResource(R.string.return_home), fontWeight = FontWeight.Bold)
+                    if (isAMOLEDTheme()) {
+                        OutlinedButton(
+                            onClick = onNavigateBack,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = amoledOutlinedButtonContainerColor(),
+                                contentColor = amoledOutlinedButtonContentColor(MaterialTheme.colorScheme.onErrorContainer)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .pressClickEffect(),
+                            shape = MaterialTheme.shapes.large
+                        ) {
+                            Text(stringResource(R.string.return_home), fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        FilledTonalButton(
+                            onClick = onNavigateBack,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .pressClickEffect(),
+                            shape = MaterialTheme.shapes.large
+                        ) {
+                            Text(stringResource(R.string.return_home), fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -271,23 +292,44 @@ fun ProgressScreen(
 
                     Spacer(modifier = Modifier.height(64.dp))
 
-                    FilledTonalButton(
-                        onClick = {
-                            viewModel.cancelOperation()
-                            onNavigateBack()
-                        },
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .pressClickEffect(),
-                        shape = MaterialTheme.shapes.large
-                    ) {
-                        Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                        Text(stringResource(R.string.cancel_operation), fontWeight = FontWeight.Bold)
+                    if (isAMOLEDTheme()) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.cancelOperation()
+                                onNavigateBack()
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = amoledOutlinedButtonContainerColor(),
+                                contentColor = amoledOutlinedButtonContentColor(MaterialTheme.colorScheme.onErrorContainer)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .pressClickEffect(),
+                            shape = MaterialTheme.shapes.large
+                        ) {
+                            Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                            Text(stringResource(R.string.cancel_operation), fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        FilledTonalButton(
+                            onClick = {
+                                viewModel.cancelOperation()
+                                onNavigateBack()
+                            },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .pressClickEffect(),
+                            shape = MaterialTheme.shapes.large
+                        ) {
+                            Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                            Text(stringResource(R.string.cancel_operation), fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

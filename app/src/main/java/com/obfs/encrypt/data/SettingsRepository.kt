@@ -36,6 +36,7 @@ class SettingsRepository @Inject constructor(
         val QUICK_ACCESS_EXPANDED_KEY = booleanPreferencesKey("quick_access_expanded")
         val APP_LOCK_ENABLED_KEY = booleanPreferencesKey("app_lock_enabled")
         val APP_LOCK_TIMEOUT_KEY = longPreferencesKey("app_lock_timeout")
+        val APP_LOCK_REQUIRE_PASSWORD_KEY = booleanPreferencesKey("app_lock_require_password")
         val LANGUAGE_KEY = stringPreferencesKey("language")
         val FILE_SORT_ORDER_KEY = stringPreferencesKey("file_sort_order")
         val FILE_SORT_ASCENDING_KEY = booleanPreferencesKey("file_sort_ascending")
@@ -116,6 +117,14 @@ class SettingsRepository @Inject constructor(
      */
     val appLockTimeout: Flow<Long> = context.dataStore.data.map { preferences ->
         preferences[APP_LOCK_TIMEOUT_KEY] ?: 0L
+    }
+
+    /**
+     * Flow of app lock requiring password.
+     * Default: true (password required for unlock)
+     */
+    val appLockRequirePassword: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[APP_LOCK_REQUIRE_PASSWORD_KEY] ?: true
     }
 
     /**
@@ -216,6 +225,15 @@ class SettingsRepository @Inject constructor(
     suspend fun setAppLockTimeout(timeout: Long) {
         context.dataStore.edit { preferences ->
             preferences[APP_LOCK_TIMEOUT_KEY] = timeout
+        }
+    }
+
+    /**
+     * Update app lock requiring password.
+     */
+    suspend fun setAppLockRequirePassword(required: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[APP_LOCK_REQUIRE_PASSWORD_KEY] = required
         }
     }
 

@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -240,6 +242,7 @@ fun OptimizedFileList(
     onRefresh: () -> Unit,
     onToggleFavorite: (String) -> Unit = {},
     onFilePreview: (FileItem) -> Unit = {},
+    onFolderClick: ((FileItem, Rect) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -341,11 +344,18 @@ fun OptimizedFileList(
                         isSelected = isSelected,
                         hasAnySelection = hasSelection,
                         isFavorite = isFavorite,
-                        onClick = { onFileClick(item) },
+                        onClick = { 
+                            if (item.isDirectory && onFolderClick != null) {
+                                // Folder click with bounds capture will be handled by onFolderClick
+                            } else {
+                                onFileClick(item) 
+                            }
+                        },
                         onLongClick = { onFileLongClick(item) },
                         onToggleSelect = { onToggleSelect(item.file) },
                         onToggleFavorite = { onToggleFavorite(item.file.absolutePath) },
-                        onThumbnailClick = { onFilePreview(item) }
+                        onThumbnailClick = { onFilePreview(item) },
+                        onFolderClick = onFolderClick
                     )
                 }
             }
@@ -376,8 +386,10 @@ private fun DisposableKeyedFileItem(
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onThumbnailClick: () -> Unit
+    onThumbnailClick: () -> Unit,
+    onFolderClick: ((FileItem, Rect) -> Unit)? = null
 ) {
+    val coroutineScope = rememberCoroutineScope()
     // Use remember to cache expensive computations
     val dateString = remember(item.lastModified) {
         SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(item.lastModified))
@@ -404,7 +416,8 @@ private fun DisposableKeyedFileItem(
         onLongClick = onLongClick,
         onToggleSelect = onToggleSelect,
         onToggleFavorite = onToggleFavorite,
-        onThumbnailClick = onThumbnailClick
+        onThumbnailClick = onThumbnailClick,
+        onFolderClick = onFolderClick
     )
 }
 
@@ -425,10 +438,15 @@ private fun OptimizedFileItemRow(
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onThumbnailClick: () -> Unit
+    onThumbnailClick: () -> Unit,
+    onFolderClick: ((FileItem, Rect) -> Unit)? = null
 ) {
     val isImage = fileType == FileType.IMAGE
     val fileColor = getColorForFileType(fileType)
+    val isFolder = item.isDirectory
+
+    // Store folder bounds for animation - only updated on layout, not on click
+    var folderBounds by remember { mutableStateOf<Rect?>(null) }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -441,8 +459,27 @@ private fun OptimizedFileItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(
+                    if (isFolder && onFolderClick != null) {
+                        Modifier.onGloballyPositioned { coordinates ->
+                            // Only capture bounds, don't trigger navigation
+                            val topLeft = coordinates.localToRoot(Offset.Zero)
+                            val bottomRight = coordinates.localToRoot(Offset(coordinates.size.width.toFloat(), coordinates.size.height.toFloat()))
+                            folderBounds = Rect(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y)
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
                 .combinedClickable(
-                    onClick = onClick,
+                    onClick = {
+                        if (isFolder && onFolderClick != null && folderBounds != null) {
+                            // User clicked - now trigger navigation with captured bounds
+                            onFolderClick(item, folderBounds!!)
+                        } else {
+                            onClick()
+                        }
+                    },
                     onLongClick = onLongClick,
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() }
@@ -457,7 +494,14 @@ private fun OptimizedFileItemRow(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = onClick
+                    onClick = {
+                        if (isFolder && onFolderClick != null && folderBounds != null) {
+                            // User clicked - now trigger navigation with captured bounds
+                            onFolderClick(item, folderBounds!!)
+                        } else {
+                            onClick()
+                        }
+                    }
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
