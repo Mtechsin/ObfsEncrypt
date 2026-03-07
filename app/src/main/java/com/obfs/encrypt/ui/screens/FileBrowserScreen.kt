@@ -17,6 +17,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -136,6 +138,15 @@ fun FileBrowserScreen(
     val sortOrder by fileManagerViewModel.sortOrder.collectAsState()
     val sortAscending by fileManagerViewModel.sortAscending.collectAsState()
     val filesAndFolders by fileManagerViewModel.filesAndFolders.collectAsState()
+
+    // Track navigation direction for spatial hints
+    var previousPath by remember { mutableStateOf(currentDirectory.absolutePath) }
+    val isForward = remember(currentDirectory.absolutePath) {
+        val forward = currentDirectory.absolutePath.length > previousPath.length || 
+                     currentDirectory.absolutePath.startsWith(previousPath) && currentDirectory.absolutePath != previousPath
+        previousPath = currentDirectory.absolutePath
+        forward
+    }
 
     // Handle system back button - navigate to previous folder instead of closing app
     BackHandler {
@@ -507,9 +518,24 @@ fun FileBrowserScreen(
                 AnimatedContent(
                     targetState = currentDirectory.absolutePath,
                     transitionSpec = {
-                        fadeIn(tween(durationMillis = 350, easing = androidx.compose.animation.core.FastOutSlowInEasing))
-                            .togetherWith(fadeOut(tween(durationMillis = 300, easing = androidx.compose.animation.core.FastOutSlowInEasing)))
-                            .using(SizeTransform(clip = true))
+                        val duration = 450
+                        val easing = androidx.compose.animation.core.FastOutSlowInEasing
+                        
+                        // For a forward move (deeper), fadeIn the new screen
+                        // For a backward move (higher), the incoming screen is already "below" 
+                        // so we focus more on letting the shared element collapse the current view.
+                        if (isForward) {
+                            (fadeIn(tween(duration, easing = easing)) + 
+                             scaleIn(initialScale = 0.94f, animationSpec = tween(duration, easing = easing)))
+                                .togetherWith(fadeOut(tween(duration / 2, easing = easing)))
+                                .using(SizeTransform(clip = false))
+                        } else {
+                            // Backward: fade the current container as it shrinks, and fadeIn the parent list
+                            (fadeIn(tween(duration, easing = easing)))
+                                .togetherWith(fadeOut(tween(duration, easing = easing)) + 
+                                            scaleOut(targetScale = 0.94f, animationSpec = tween(duration, easing = easing)))
+                                .using(SizeTransform(clip = false))
+                        }
                     },
                     modifier = Modifier.weight(1f),
                     label = "directory_transition"
@@ -522,7 +548,7 @@ fun FileBrowserScreen(
                                 animatedVisibilityScope = this@AnimatedContent,
                                 boundsTransform = { _, _ ->
                                     tween(
-                                        durationMillis = 450,
+                                        durationMillis = 450, // Matches transition duration for sync
                                         easing = androidx.compose.animation.core.FastOutSlowInEasing
                                     )
                                 }
