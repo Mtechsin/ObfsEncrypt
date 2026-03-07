@@ -434,186 +434,189 @@ fun FileBrowserScreen(
                 }
             }
         ) { paddingValues ->
-            AnimatedContent(
-                targetState = currentDirectory.absolutePath,
-                transitionSpec = {
-                    fadeIn(tween(durationMillis = 400, easing = androidx.compose.animation.core.FastOutSlowInEasing))
-                        .togetherWith(fadeOut(tween(durationMillis = 350, easing = androidx.compose.animation.core.FastOutSlowInEasing)))
-                        .using(SizeTransform(clip = true))
-                },
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
-                label = "directory_transition"
-            ) { targetPath ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .sharedElement(
-                            rememberSharedContentState(key = "folder_$targetPath"),
-                            animatedVisibilityScope = this@AnimatedContent,
-                            boundsTransform = { _, _ ->
-                                tween(
-                                    durationMillis = 400,
-                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
-                                )
-                            }
-                        )
-                ) {
-                    if (showSearch) {
-                        FileSearchBar(
-                            query = searchQuery,
-                            onQueryChange = { 
-                                searchQuery = it
-                                searchResults = null
-                            },
-                            onSearch = { 
-                                if (it.isNotBlank()) {
-                                    fileManagerViewModel.searchFiles(
-                                        query = it,
-                                        searchSubfolders = searchSubfolders
-                                    ) { results ->
-                                        searchResults = results
-                                    }
+                    .padding(paddingValues)
+            ) {
+                // Static elements that don't move with folder navigation
+                if (showSearch) {
+                    FileSearchBar(
+                        query = searchQuery,
+                        onQueryChange = { 
+                            searchQuery = it
+                            searchResults = null
+                        },
+                        onSearch = { 
+                            if (it.isNotBlank()) {
+                                fileManagerViewModel.searchFiles(
+                                    query = it,
+                                    searchSubfolders = searchSubfolders
+                                ) { results ->
+                                    searchResults = results
                                 }
-                            },
-                            searchSubfolders = searchSubfolders,
-                            onSearchSubfoldersChange = { 
-                                searchSubfolders = it
-                                if (searchQuery.isNotBlank()) {
-                                    fileManagerViewModel.searchFiles(
-                                        query = searchQuery,
-                                        searchSubfolders = it
-                                    ) { results ->
-                                        searchResults = results
-                                    }
-                                }
-                            },
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.TopCenter
-                        ) {
-                            Column {
-                                // Quick Access Section
-                                QuickAccessSection(
-                                    favoritePaths = favoritePaths,
-                                    onFolderClick = { path ->
-                                        fileManagerViewModel.navigateToPath(path)
-                                    },
-                                    onFavoriteClick = { path ->
-                                        fileManagerViewModel.toggleFavorite(path)
-                                    },
-                                    isExpanded = quickAccessExpanded,
-                                    onToggleExpand = { viewModel.setQuickAccessExpanded(!quickAccessExpanded) },
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                )
                             }
+                        },
+                        searchSubfolders = searchSubfolders,
+                        onSearchSubfoldersChange = { 
+                            searchSubfolders = it
+                            if (searchQuery.isNotBlank()) {
+                                fileManagerViewModel.searchFiles(
+                                    query = searchQuery,
+                                    searchSubfolders = it
+                                ) { results ->
+                                    searchResults = results
+                                }
+                            }
+                        },
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        Column {
+                            // Quick Access Section - Fixed at top
+                            QuickAccessSection(
+                                favoritePaths = favoritePaths,
+                                onFolderClick = { path ->
+                                    fileManagerViewModel.navigateToPath(path)
+                                },
+                                onFavoriteClick = { path ->
+                                    fileManagerViewModel.toggleFavorite(path)
+                                },
+                                isExpanded = quickAccessExpanded,
+                                onToggleExpand = { viewModel.setQuickAccessExpanded(!quickAccessExpanded) },
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                            
+                            // File Filter Chips - Fixed below Quick Access
+                            FileFilterChips(
+                                selectedFilter = selectedFilter,
+                                onFilterSelected = { selectedFilter = it },
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    .fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
+                // The dynamic content area that participates in folder transitions
+                AnimatedContent(
+                    targetState = currentDirectory.absolutePath,
+                    transitionSpec = {
+                        fadeIn(tween(durationMillis = 350, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                            .togetherWith(fadeOut(tween(durationMillis = 300, easing = androidx.compose.animation.core.FastOutSlowInEasing)))
+                            .using(SizeTransform(clip = true))
+                    },
+                    modifier = Modifier.weight(1f),
+                    label = "directory_transition"
+                ) { targetPath ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .sharedElement(
+                                rememberSharedContentState(key = "folder_$targetPath"),
+                                animatedVisibilityScope = this@AnimatedContent,
+                                boundsTransform = { _, _ ->
+                                    tween(
+                                        durationMillis = 450,
+                                        easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                    )
+                                }
+                            )
+                    ) {
+                        if (!showSearch && targetPath != Environment.getExternalStorageDirectory().absolutePath) {
+                            FilePathBreadcrumb(
+                                currentPath = targetPath,
+                                onPathClick = { path ->
+                                    fileManagerViewModel.navigateToPath(path)
+                                },
+                                onHomeClick = {
+                                    fileManagerViewModel.navigateToPath(Environment.getExternalStorageDirectory().absolutePath)
+                                },
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    .fillMaxWidth()
+                            )
                         }
                         
-                        Spacer(modifier = Modifier.height(4.dp))
-                    }
-                    
-                    if (!showSearch) {
-                        FileFilterChips(
-                            selectedFilter = selectedFilter,
-                            onFilterSelected = { selectedFilter = it },
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                                .fillMaxWidth()
-                        )
-                    }
-                    
-                    if (!showSearch && currentDirectory.absolutePath != Environment.getExternalStorageDirectory().absolutePath) {
-                        FilePathBreadcrumb(
-                            currentPath = currentDirectory.absolutePath,
-                            onPathClick = { path ->
-                                fileManagerViewModel.navigateToPath(path)
-                            },
-                            onHomeClick = {
-                                fileManagerViewModel.navigateToPath(Environment.getExternalStorageDirectory().absolutePath)
-                            },
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                                .fillMaxWidth()
-                        )
-                    }
-                    
-                    // Path-aware file list for smooth transitions
-                    val currentPathState by fileManagerViewModel.currentDirectory.collectAsState()
-                    val filesAndFoldersState by fileManagerViewModel.filesAndFolders.collectAsState()
-                    
-                    val displayFiles = remember(targetPath, filesAndFoldersState, currentPathState, showSearch, searchResults, selectedFilter) {
-                        if (showSearch && searchResults != null) {
-                            val results = searchResults!!
-                            if (selectedFilter != FileFilter.ALL) {
-                                results.filter { item ->
-                                    shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
+                        // Path-aware file list for smooth transitions
+                        val currentPathState by fileManagerViewModel.currentDirectory.collectAsState()
+                        val filesAndFoldersState by fileManagerViewModel.filesAndFolders.collectAsState()
+                        
+                        val displayFiles = remember(targetPath, filesAndFoldersState, currentPathState, showSearch, searchResults, selectedFilter) {
+                            if (showSearch && searchResults != null) {
+                                val results = searchResults!!
+                                if (selectedFilter != FileFilter.ALL) {
+                                    results.filter { item ->
+                                        shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
+                                    }
+                                } else {
+                                    results
                                 }
+                            } else if (currentPathState.absolutePath == targetPath) {
+                                filteredFiles
                             } else {
-                                results
-                            }
-                        } else if (currentPathState.absolutePath == targetPath) {
-                            filteredFiles
-                        } else {
-                            // During transition, if this is the "old" screen, use cached files
-                            val cached = fileManagerViewModel.getCachedFiles(targetPath) ?: emptyList()
-                            cached.filter { item ->
-                                val matchesFilter = shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
-                                val matchesSearch = searchQuery.isEmpty() || item.name.contains(searchQuery, ignoreCase = true)
-                                matchesFilter && matchesSearch
+                                // During transition, if this is the "old" screen, use cached files
+                                val cached = fileManagerViewModel.getCachedFiles(targetPath) ?: emptyList()
+                                cached.filter { item ->
+                                    val matchesFilter = shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
+                                    val matchesSearch = searchQuery.isEmpty() || item.name.contains(searchQuery, ignoreCase = true)
+                                    matchesFilter && matchesSearch
+                                }
                             }
                         }
-                    }
 
-                    OptimizedFileList(
-                        filesAndFolders = displayFiles,
-                        selectedItems = selectedItems,
-                        isLoading = isLoading,
-                        favoritePaths = favoritePaths,
-                        onFileClick = { item ->
-                            haptic.click()
-                            if (!item.isDirectory) {
-                                // Click on name/row selects the file
-                                fileManagerViewModel.toggleSelection(item.file)
-                            }
-                        },
-                        onFileLongClick = { item ->
-                            haptic.heavyClick()
-                            if (!item.isDirectory) {
-                                fileManagerViewModel.toggleSelection(item.file)
-                            }
-                        },
-                        onFilePreview = { item ->
-                            // Click on image thumbnail opens preview
-                            haptic.click()
-                            previewFileItem = item
-                        },
-                        onFolderClick = { item, _ ->
-                            haptic.click()
-                            fileManagerViewModel.navigateTo(item.file)
-                        },
-                        onToggleSelect = { file ->
-                            haptic.click()
-                            fileManagerViewModel.toggleSelection(file)
-                        },
-                        onSelectAll = { fileManagerViewModel.selectAll() },
-                        onClearSelection = { fileManagerViewModel.clearSelection() },
-                        onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
-                        onToggleFavorite = { path ->
-                            fileManagerViewModel.toggleFavorite(path)
-                        },
-                        sharedTransitionScope = this@SharedTransitionLayout,
-                        animatedContentScope = this@AnimatedContent,
-                        modifier = Modifier.weight(1f),
-                        currentPath = targetPath,
-                        onSaveScrollPosition = { path, index, offset ->
-                            fileManagerViewModel.saveScrollPosition(path, index, offset)
-                        },
-                        initialScrollPosition = fileManagerViewModel.getScrollPosition(targetPath)
-                    )
+                        OptimizedFileList(
+                            filesAndFolders = displayFiles,
+                            selectedItems = selectedItems,
+                            isLoading = isLoading,
+                            favoritePaths = favoritePaths,
+                            onFileClick = { item ->
+                                haptic.click()
+                                if (!item.isDirectory) {
+                                    // Click on name/row selects the file
+                                    fileManagerViewModel.toggleSelection(item.file)
+                                }
+                            },
+                            onFileLongClick = { item ->
+                                haptic.heavyClick()
+                                if (!item.isDirectory) {
+                                    fileManagerViewModel.toggleSelection(item.file)
+                                }
+                            },
+                            onFilePreview = { item ->
+                                // Click on image thumbnail opens preview
+                                haptic.click()
+                                previewFileItem = item
+                            },
+                            onFolderClick = { item, _ ->
+                                haptic.click()
+                                fileManagerViewModel.navigateTo(item.file)
+                            },
+                            onToggleSelect = { file ->
+                                haptic.click()
+                                fileManagerViewModel.toggleSelection(file)
+                            },
+                            onSelectAll = { fileManagerViewModel.selectAll() },
+                            onClearSelection = { fileManagerViewModel.clearSelection() },
+                            onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
+                            onToggleFavorite = { path ->
+                                fileManagerViewModel.toggleFavorite(path)
+                            },
+                            sharedTransitionScope = this@SharedTransitionLayout,
+                            animatedContentScope = this@AnimatedContent,
+                            modifier = Modifier.weight(1f),
+                            currentPath = targetPath,
+                            onSaveScrollPosition = { path, index, offset ->
+                                fileManagerViewModel.saveScrollPosition(path, index, offset)
+                            },
+                            initialScrollPosition = fileManagerViewModel.getScrollPosition(targetPath)
+                        )
+                    }
                 }
             }
         }
