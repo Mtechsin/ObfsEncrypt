@@ -38,8 +38,11 @@ class MainViewModel @Inject constructor(
     private val appDirectoryManager: AppDirectoryManager,
     private val historyRepository: EncryptionHistoryRepository,
     val biometricAuthManager: BiometricAuthManager,
-    val appPasswordManager: AppPasswordManager
+    val appPasswordManager: AppPasswordManager,
+    private val batchEncryptionManager: com.obfs.encrypt.data.BatchEncryptionManager
 ) : AndroidViewModel(application) {
+
+    private val BATCH_THRESHOLD = 5
 
     private val _progress = MutableStateFlow(0f)
     val progress: StateFlow<Float> = _progress.asStateFlow()
@@ -308,6 +311,20 @@ class MainViewModel @Inject constructor(
         enableIntegrityCheck: Boolean = false
     ) {
         if (uris.isEmpty()) return
+        
+        if (uris.size > BATCH_THRESHOLD) {
+            batchEncryptionManager.enqueueBatch(
+                operation = com.obfs.encrypt.services.EncryptionWorker.OPERATION_ENCRYPT,
+                uris = uris,
+                password = password,
+                method = method,
+                deleteOriginal = deleteOriginal,
+                enableIntegrity = enableIntegrityCheck
+            )
+            _statusMessage.value = "Batch encryption started in background..."
+            return
+        }
+
         currentJob = viewModelScope.launch(Dispatchers.IO) {
             _isOperationActive.value = true
             _progress.value = 0f
@@ -406,6 +423,19 @@ class MainViewModel @Inject constructor(
         verifyIntegrity: Boolean = true
     ) {
         if (uris.isEmpty()) return
+
+        if (uris.size > BATCH_THRESHOLD) {
+            batchEncryptionManager.enqueueBatch(
+                operation = com.obfs.encrypt.services.EncryptionWorker.OPERATION_DECRYPT,
+                uris = uris,
+                password = password,
+                deleteOriginal = deleteOriginal,
+                enableIntegrity = verifyIntegrity
+            )
+            _statusMessage.value = "Batch decryption started in background..."
+            return
+        }
+
         currentJob = viewModelScope.launch(Dispatchers.IO) {
             _isOperationActive.value = true
             _progress.value = 0f

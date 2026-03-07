@@ -67,7 +67,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun DeviceFoldersScreen(
     onNavigateToProgress: (String) -> Unit,
@@ -433,7 +433,12 @@ fun DeviceFoldersScreen(
                     },
                     onSelectAll = { fileManagerViewModel.selectAll() },
                     onClearSelection = { fileManagerViewModel.clearSelection() },
-                    onRefresh = { fileManagerViewModel.refreshCurrentDirectory() }
+                    onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
+                    currentPath = currentDirectory.absolutePath,
+                    onSaveScrollPosition = { path, index, offset ->
+                        fileManagerViewModel.saveScrollPosition(path, index, offset)
+                    },
+                    initialScrollPosition = fileManagerViewModel.getScrollPosition(currentDirectory.absolutePath)
                 )
             }
         }

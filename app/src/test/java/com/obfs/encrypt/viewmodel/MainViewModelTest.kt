@@ -52,6 +52,8 @@ class MainViewModelTest {
     private lateinit var appDirectoryManager: AppDirectoryManager
     private lateinit var biometricAuthManager: BiometricAuthManager
     private lateinit var historyRepository: EncryptionHistoryRepository
+    private lateinit var appPasswordManager: com.obfs.encrypt.security.AppPasswordManager
+    private lateinit var batchEncryptionManager: com.obfs.encrypt.data.BatchEncryptionManager
 
     // System under test
     private lateinit var viewModel: MainViewModel
@@ -68,6 +70,8 @@ class MainViewModelTest {
         appDirectoryManager = mockk(relaxed = true)
         biometricAuthManager = mockk(relaxed = true)
         historyRepository = mockk(relaxed = true)
+        appPasswordManager = mockk(relaxed = true)
+        batchEncryptionManager = mockk(relaxed = true)
 
         // Mock repository flows with default values
         every { settingsRepository.secureDeleteOriginals } returns flowOf(true)
@@ -85,7 +89,9 @@ class MainViewModelTest {
             settingsRepository = settingsRepository,
             appDirectoryManager = appDirectoryManager,
             historyRepository = historyRepository,
-            biometricAuthManager = biometricAuthManager
+            biometricAuthManager = biometricAuthManager,
+            appPasswordManager = appPasswordManager,
+            batchEncryptionManager = batchEncryptionManager
         )
     }
 

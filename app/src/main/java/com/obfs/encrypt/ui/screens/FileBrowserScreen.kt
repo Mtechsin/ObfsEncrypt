@@ -13,19 +13,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateRectAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,6 +49,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.togetherWith
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,18 +68,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -106,7 +97,7 @@ import com.obfs.encrypt.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun FileBrowserScreen(
     onNavigateBack: () -> Unit,
@@ -130,26 +121,6 @@ fun FileBrowserScreen(
         )
     }
 
-    // Track folder expansion/collapse animation
-    var expandingFolderPath by remember { mutableStateOf<String?>(null) }
-    var collapsingFolderPath by remember { mutableStateOf<String?>(null) }
-    
-    // Track the bounds of the folder item being expanded (for shared element animation)
-    var expandingFolderBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-
-    // Animation state for folder expansion
-    val expansionProgress by animateFloatAsState(
-        targetValue = if (expandingFolderPath != null) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "folder_expansion"
-    )
-    
-    // Track previous directory for collapse animation
-    var previousDirectory by remember { mutableStateOf<File?>(null) }
-
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedFilter by rememberSaveable { mutableStateOf(FileFilter.ALL) }
@@ -161,23 +132,19 @@ fun FileBrowserScreen(
 
     val selectedItems by fileManagerViewModel.selectedItems.collectAsState()
     val currentDirectory by fileManagerViewModel.currentDirectory.collectAsState()
-    val filesAndFolders by fileManagerViewModel.filesAndFolders.collectAsState()
     val isLoading by fileManagerViewModel.isLoading.collectAsState()
     val sortOrder by fileManagerViewModel.sortOrder.collectAsState()
     val sortAscending by fileManagerViewModel.sortAscending.collectAsState()
+    val filesAndFolders by fileManagerViewModel.filesAndFolders.collectAsState()
 
-    // Track directory changes for collapse animation
-    LaunchedEffect(currentDirectory) {
-        if (collapsingFolderPath != null) {
-            // We're collapsing, wait for animation then reset
-            delay(600)
-            collapsingFolderPath = null
+    // Handle system back button - navigate to previous folder instead of closing app
+    BackHandler {
+        haptic.click()
+        val canNavigateUp = fileManagerViewModel.navigateUp()
+        if (!canNavigateUp) {
+            // Already at root, go back to previous screen
+            onNavigateBack()
         }
-        // When navigating to a new folder during expansion, trigger collapse animation
-        if (expandingFolderPath != null && currentDirectory?.absolutePath != expandingFolderPath) {
-            // Expansion completed, new directory is loaded
-        }
-        previousDirectory = currentDirectory
     }
 
     val isDecryptionMode by remember {
@@ -301,335 +268,358 @@ fun FileBrowserScreen(
         // Share completed
     }
 
-
-    
-    // Dialogs moved inside Scaffold for reliability
-    
     val hasSelection = selectedItems.isNotEmpty()
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    if (!showSearch) {
-                        Text(
-                            text = stringResource(R.string.browse_files),
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                },
-                navigationIcon = {
-                    if (showSearch) {
-                        IconButton(
-                            onClick = {
-                                haptic.click()
-                                showSearch = false
-                                searchQuery = ""
-                            }
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+    SharedTransitionLayout {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        if (!showSearch) {
+                            Text(
+                                text = stringResource(R.string.browse_files),
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center
+                            )
                         }
-                    } else {
-                        IconButton(
-                            onClick = {
-                                haptic.click()
-                                // Trigger collapse animation if we have a previous directory
-                                if (previousDirectory != null && currentDirectory != previousDirectory) {
-                                    collapsingFolderPath = currentDirectory.absolutePath
-                                    scope.launch {
-                                        delay(300)
+                    },
+                    navigationIcon = {
+                        if (showSearch) {
+                            IconButton(
+                                onClick = {
+                                    haptic.click()
+                                    showSearch = false
+                                    searchQuery = ""
+                                }
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                            }
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    haptic.click()
+                                    val canNavigateUp = fileManagerViewModel.navigateUp()
+                                    if (!canNavigateUp) {
+                                        // Already at root, go back to previous screen
                                         onNavigateBack()
                                     }
-                                } else {
-                                    onNavigateBack()
                                 }
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                             }
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                         }
-                    }
-                },
-                actions = {
-                    if (!showSearch) {
-                        IconButton(
-                            onClick = {
-                                haptic.click()
-                                showSearch = true
+                    },
+                    actions = {
+                        if (!showSearch) {
+                            IconButton(
+                                onClick = {
+                                    haptic.click()
+                                    showSearch = true
+                                }
+                            ) {
+                                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search))
                             }
-                        ) {
-                            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search))
+                            SortOptionsDropdown(
+                                currentSortOrder = sortOrder,
+                                currentSortAscending = sortAscending,
+                                onSortOrderChange = { fileManagerViewModel.setSortOrder(it) },
+                                onSortAscendingToggle = { fileManagerViewModel.toggleSortAscending() }
+                            )
                         }
-                        SortOptionsDropdown(
-                            currentSortOrder = sortOrder,
-                            currentSortAscending = sortAscending,
-                            onSortOrderChange = { fileManagerViewModel.setSortOrder(it) },
-                            onSortAscendingToggle = { fileManagerViewModel.toggleSortAscending() }
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
-                ),
-                windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-        },
-        bottomBar = {
-            AnimatedVisibility(
-                visible = hasSelection,
-                enter = androidx.compose.animation.slideInVertically { it },
-                exit = androidx.compose.animation.slideOutVertically { it }
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        scrolledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                    ),
+                    windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            },
+            bottomBar = {
+                AnimatedVisibility(
+                    visible = hasSelection,
+                    enter = androidx.compose.animation.slideInVertically { it },
+                    exit = androidx.compose.animation.slideOutVertically { it }
                 ) {
-                    Column {
-                        LinearProgressIndicator(
-                            progress = { 1f },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = Color.Transparent
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = stringResource(R.string.items_selected, selectedItems.size),
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    text = if (isDecryptionMode) stringResource(R.string.ready_to_decrypt) else stringResource(R.string.ready_to_encrypt),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                TextButton(
-                                    onClick = {
-                                        haptic.click()
-                                        fileManagerViewModel.clearSelection()
-                                    }
-                                ) {
-                                    Text(stringResource(R.string.cancel))
-                                }
-                                // Batch operations menu
-                                BatchOperationsMenu(
-                                    onCopy = {
-                                        haptic.click()
-                                        showCopyMoveDialog = "copy"
-                                    },
-                                    onMove = {
-                                        haptic.click()
-                                        showCopyMoveDialog = "move"
-                                    },
-                                    onDelete = {
-                                        haptic.click()
-                                        showDeleteConfirm = true
-                                    },
-                                    onShare = {
-                                        haptic.click()
-                                        val shareIntent = fileManagerViewModel.batchShare(
-                                            selectedItems.toList(),
-                                            context
-                                        )
-                                        shareIntent?.let {
-                                            shareLauncher.launch(Intent.createChooser(it, "Share files"))
-                                        }
-                                    }
-                                )
-                                Button(
-                                    onClick = {
-                                        haptic.heavyClick()
-                                        val trigger = System.currentTimeMillis()
-                                        Log.d("FileBrowserScreen", "Button clicked! Generating new trigger: $trigger")
-                                        showOutputDialogTrigger = trigger
-                                    },
-                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary
-                                    ),
-                                    modifier = Modifier.padding(bottom = 8.dp),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(
-                                        if (isDecryptionMode) Icons.Default.LockOpen else Icons.Default.Lock,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 8.dp
+                    ) {
+                        Column {
+                            LinearProgressIndicator(
+                                progress = { 1f },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = Color.Transparent
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text(
+                                        text = stringResource(R.string.items_selected, selectedItems.size),
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleMedium
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(if (isDecryptionMode) stringResource(R.string.decrypt) else stringResource(R.string.encrypt), fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (isDecryptionMode) stringResource(R.string.ready_to_decrypt) else stringResource(R.string.ready_to_encrypt),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    TextButton(
+                                        onClick = {
+                                            haptic.click()
+                                            fileManagerViewModel.clearSelection()
+                                        }
+                                    ) {
+                                        Text(stringResource(R.string.cancel))
+                                    }
+                                    // Batch operations menu
+                                    BatchOperationsMenu(
+                                        onCopy = {
+                                            haptic.click()
+                                            showCopyMoveDialog = "copy"
+                                        },
+                                        onMove = {
+                                            haptic.click()
+                                            showCopyMoveDialog = "move"
+                                        },
+                                        onDelete = {
+                                            haptic.click()
+                                            showDeleteConfirm = true
+                                        },
+                                        onShare = {
+                                            haptic.click()
+                                            val shareIntent = fileManagerViewModel.batchShare(
+                                                selectedItems.toList(),
+                                                context
+                                            )
+                                            shareIntent?.let {
+                                                shareLauncher.launch(Intent.createChooser(it, "Share files"))
+                                            }
+                                        }
+                                    )
+                                    Button(
+                                        onClick = {
+                                            haptic.heavyClick()
+                                            val trigger = System.currentTimeMillis()
+                                            Log.d("FileBrowserScreen", "Button clicked! Generating new trigger: $trigger")
+                                            showOutputDialogTrigger = trigger
+                                        },
+                                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary
+                                        ),
+                                        modifier = Modifier.padding(bottom = 8.dp),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(
+                                            if (isDecryptionMode) Icons.Default.LockOpen else Icons.Default.Lock,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(if (isDecryptionMode) stringResource(R.string.decrypt) else stringResource(R.string.encrypt), fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (showSearch) {
-                FileSearchBar(
-                    query = searchQuery,
-                    onQueryChange = { 
-                        searchQuery = it
-                        searchResults = null
-                    },
-                    onSearch = { 
-                        if (it.isNotBlank()) {
-                            fileManagerViewModel.searchFiles(
-                                query = it,
-                                searchSubfolders = searchSubfolders
-                            ) { results ->
-                                searchResults = results
+        ) { paddingValues ->
+            AnimatedContent(
+                targetState = currentDirectory.absolutePath,
+                transitionSpec = {
+                    fadeIn(tween(durationMillis = 400, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                        .togetherWith(fadeOut(tween(durationMillis = 350, easing = androidx.compose.animation.core.FastOutSlowInEasing)))
+                        .using(SizeTransform(clip = true))
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                label = "directory_transition"
+            ) { targetPath ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .sharedElement(
+                            rememberSharedContentState(key = "folder_$targetPath"),
+                            animatedVisibilityScope = this@AnimatedContent,
+                            boundsTransform = { _, _ ->
+                                tween(
+                                    durationMillis = 400,
+                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                )
                             }
-                        }
-                    },
-                    searchSubfolders = searchSubfolders,
-                    onSearchSubfoldersChange = { 
-                        searchSubfolders = it
-                        if (searchQuery.isNotBlank()) {
-                            fileManagerViewModel.searchFiles(
-                                query = searchQuery,
-                                searchSubfolders = it
-                            ) { results ->
-                                searchResults = results
-                            }
-                        }
-                    },
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.TopCenter
+                        )
                 ) {
-                    Column {
-                        // Quick Access Section
-                        QuickAccessSection(
-                            favoritePaths = favoritePaths,
-                            onFolderClick = { path ->
-                                fileManagerViewModel.navigateToPath(path)
+                    if (showSearch) {
+                        FileSearchBar(
+                            query = searchQuery,
+                            onQueryChange = { 
+                                searchQuery = it
+                                searchResults = null
                             },
-                            onFavoriteClick = { path ->
-                                fileManagerViewModel.toggleFavorite(path)
+                            onSearch = { 
+                                if (it.isNotBlank()) {
+                                    fileManagerViewModel.searchFiles(
+                                        query = it,
+                                        searchSubfolders = searchSubfolders
+                                    ) { results ->
+                                        searchResults = results
+                                    }
+                                }
                             },
-                            isExpanded = quickAccessExpanded,
-                            onToggleExpand = { viewModel.setQuickAccessExpanded(!quickAccessExpanded) },
+                            searchSubfolders = searchSubfolders,
+                            onSearchSubfoldersChange = { 
+                                searchSubfolders = it
+                                if (searchQuery.isNotBlank()) {
+                                    fileManagerViewModel.searchFiles(
+                                        query = searchQuery,
+                                        searchSubfolders = it
+                                    ) { results ->
+                                        searchResults = results
+                                    }
+                                }
+                            },
                             modifier = Modifier.padding(vertical = 4.dp)
                         )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            Column {
+                                // Quick Access Section
+                                QuickAccessSection(
+                                    favoritePaths = favoritePaths,
+                                    onFolderClick = { path ->
+                                        fileManagerViewModel.navigateToPath(path)
+                                    },
+                                    onFavoriteClick = { path ->
+                                        fileManagerViewModel.toggleFavorite(path)
+                                    },
+                                    isExpanded = quickAccessExpanded,
+                                    onToggleExpand = { viewModel.setQuickAccessExpanded(!quickAccessExpanded) },
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
-                }
-                
-                Spacer(modifier = Modifier.height(4.dp))
-            }
-            
-            if (!showSearch) {
-                FileFilterChips(
-                    selectedFilter = selectedFilter,
-                    onFilterSelected = { selectedFilter = it },
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .fillMaxWidth()
-                )
-            }
-            
-            if (!showSearch && currentDirectory.absolutePath != Environment.getExternalStorageDirectory().absolutePath) {
-                FilePathBreadcrumb(
-                    currentPath = currentDirectory.absolutePath,
-                    onPathClick = { path ->
-                        fileManagerViewModel.navigateToPath(path)
-                    },
-                    onHomeClick = {
-                        fileManagerViewModel.navigateToPath(Environment.getExternalStorageDirectory().absolutePath)
-                    },
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .fillMaxWidth()
-                )
-            }
-            
-            val displayFiles = if (showSearch && searchResults != null) {
-                // Show search results
-                val results = searchResults!!
-                if (selectedFilter != FileFilter.ALL) {
-                    results.filter { item ->
-                        shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
+                    
+                    if (!showSearch) {
+                        FileFilterChips(
+                            selectedFilter = selectedFilter,
+                            onFilterSelected = { selectedFilter = it },
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .fillMaxWidth()
+                        )
                     }
-                } else {
-                    results
-                }
-            } else {
-                // Show filtered files from current directory
-                filteredFiles
-            }
+                    
+                    if (!showSearch && currentDirectory.absolutePath != Environment.getExternalStorageDirectory().absolutePath) {
+                        FilePathBreadcrumb(
+                            currentPath = currentDirectory.absolutePath,
+                            onPathClick = { path ->
+                                fileManagerViewModel.navigateToPath(path)
+                            },
+                            onHomeClick = {
+                                fileManagerViewModel.navigateToPath(Environment.getExternalStorageDirectory().absolutePath)
+                            },
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .fillMaxWidth()
+                        )
+                    }
+                    
+                    // Path-aware file list for smooth transitions
+                    val currentPathState by fileManagerViewModel.currentDirectory.collectAsState()
+                    val filesAndFoldersState by fileManagerViewModel.filesAndFolders.collectAsState()
+                    
+                    val displayFiles = remember(targetPath, filesAndFoldersState, currentPathState, showSearch, searchResults, selectedFilter) {
+                        if (showSearch && searchResults != null) {
+                            val results = searchResults!!
+                            if (selectedFilter != FileFilter.ALL) {
+                                results.filter { item ->
+                                    shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
+                                }
+                            } else {
+                                results
+                            }
+                        } else if (currentPathState.absolutePath == targetPath) {
+                            filteredFiles
+                        } else {
+                            // During transition, if this is the "old" screen, use cached files
+                            val cached = fileManagerViewModel.getCachedFiles(targetPath) ?: emptyList()
+                            cached.filter { item ->
+                                val matchesFilter = shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
+                                val matchesSearch = searchQuery.isEmpty() || item.name.contains(searchQuery, ignoreCase = true)
+                                matchesFilter && matchesSearch
+                            }
+                        }
+                    }
 
-            OptimizedFileList(
-                filesAndFolders = displayFiles,
-                selectedItems = selectedItems,
-                isLoading = isLoading,
-                favoritePaths = favoritePaths,
-                onFileClick = { item ->
-                    haptic.click()
-                    if (!item.isDirectory) {
-                        // Click on name/row selects the file
-                        fileManagerViewModel.toggleSelection(item.file)
-                    }
-                },
-                onFileLongClick = { item ->
-                    haptic.heavyClick()
-                    if (!item.isDirectory) {
-                        fileManagerViewModel.toggleSelection(item.file)
-                    }
-                },
-                onFilePreview = { item ->
-                    // Click on image thumbnail opens preview
-                    haptic.click()
-                    previewFileItem = item
-                },
-                onFolderClick = { item, bounds ->
-                    haptic.click()
-                    // Capture folder bounds for animation
-                    expandingFolderPath = item.file.absolutePath
-                    expandingFolderBounds = bounds
-                    // Navigate immediately so content appears during morph transition
-                    scope.launch {
-                        fileManagerViewModel.navigateTo(item.file)
-                        // Reset expansion state after animation completes
-                        delay(600)
-                        expandingFolderPath = null
-                        expandingFolderBounds = null
-                    }
-                },
-                onToggleSelect = { file ->
-                    haptic.click()
-                    fileManagerViewModel.toggleSelection(file)
-                },
-                onSelectAll = { fileManagerViewModel.selectAll() },
-                onClearSelection = { fileManagerViewModel.clearSelection() },
-                onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
-                onToggleFavorite = { path ->
-                    fileManagerViewModel.toggleFavorite(path)
-                },
-                modifier = Modifier.weight(1f)
-            )
-
+                    OptimizedFileList(
+                        filesAndFolders = displayFiles,
+                        selectedItems = selectedItems,
+                        isLoading = isLoading,
+                        favoritePaths = favoritePaths,
+                        onFileClick = { item ->
+                            haptic.click()
+                            if (!item.isDirectory) {
+                                // Click on name/row selects the file
+                                fileManagerViewModel.toggleSelection(item.file)
+                            }
+                        },
+                        onFileLongClick = { item ->
+                            haptic.heavyClick()
+                            if (!item.isDirectory) {
+                                fileManagerViewModel.toggleSelection(item.file)
+                            }
+                        },
+                        onFilePreview = { item ->
+                            // Click on image thumbnail opens preview
+                            haptic.click()
+                            previewFileItem = item
+                        },
+                        onFolderClick = { item, _ ->
+                            haptic.click()
+                            fileManagerViewModel.navigateTo(item.file)
+                        },
+                        onToggleSelect = { file ->
+                            haptic.click()
+                            fileManagerViewModel.toggleSelection(file)
+                        },
+                        onSelectAll = { fileManagerViewModel.selectAll() },
+                        onClearSelection = { fileManagerViewModel.clearSelection() },
+                        onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
+                        onToggleFavorite = { path ->
+                            fileManagerViewModel.toggleFavorite(path)
+                        },
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        animatedContentScope = this@AnimatedContent,
+                        modifier = Modifier.weight(1f),
+                        currentPath = targetPath,
+                        onSaveScrollPosition = { path, index, offset ->
+                            fileManagerViewModel.saveScrollPosition(path, index, offset)
+                        },
+                        initialScrollPosition = fileManagerViewModel.getScrollPosition(targetPath)
+                    )
+                }
+            }
         }
     }
 
-    // Overlays rendered last to ensure they are on top of everything including bottom bar
+    // Overlays rendered last
     if (showOutputDialogTrigger != null) {
         val currentOutputUri by viewModel.currentOutputUri.collectAsState()
         OutputLocationDialog(
@@ -711,7 +701,6 @@ fun FileBrowserScreen(
     // Batch operation result snackbar
     LaunchedEffect(batchOperationResult) {
         batchOperationResult?.let { result ->
-            // Show result (could be enhanced with Snackbar)
             Log.d("FileBrowserScreen", "Batch operation result: ${result.message}")
             fileManagerViewModel.clearBatchOperationResult()
         }
@@ -724,216 +713,6 @@ fun FileBrowserScreen(
             onDismiss = { previewFileItem = null }
         )
     }
-
-    // Folder expansion animation overlay - morph transition from folder position
-    if (expandingFolderPath != null) {
-        FolderExpansionOverlay(
-            folderPath = expandingFolderPath!!,
-            folderBounds = expandingFolderBounds,
-            expansionProgress = expansionProgress,
-            isExpanding = true
-        )
-    }
-
-    // Folder collapse animation overlay - morph transition back
-    if (collapsingFolderPath != null) {
-        FolderExpansionOverlay(
-            folderPath = collapsingFolderPath!!,
-            folderBounds = null, // Collapse from center
-            expansionProgress = 1f - expansionProgress,
-            isExpanding = false
-        )
-    }
-}
-
-/**
- * Folder expansion/collapse morph transition.
- * Creates a smooth shared-element-like transition where the folder item
- * expands from its position to reveal the new screen content.
- */
-@Composable
-private fun FolderExpansionOverlay(
-    folderPath: String,
-    folderBounds: Rect?,
-    expansionProgress: Float,
-    isExpanding: Boolean
-) {
-    val folderName = folderPath.substringAfterLast('/').ifEmpty { folderPath }
-    val density = LocalDensity.current
-    val screenWidth = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
-    val screenHeight = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
-
-    // Calculate start position from bounds or default to center
-    val startX = folderBounds?.let { (it.left + it.right) / 2 } ?: screenWidth / 2
-    val startY = folderBounds?.let { (it.top + it.bottom) / 2 } ?: screenHeight / 3
-    val startWidth = folderBounds?.width ?: 100f
-    val startHeight = folderBounds?.height ?: 72f
-
-    // Calculate scale from the folder item size to fill most of screen (not full)
-    val targetScaleX = 0.95f  // Don't scale to full screen width
-    val targetScaleY = 0.90f  // Don't scale to full screen height
-    val scaleX = lerp(startWidth / screenWidth, targetScaleX, expansionProgress.coerceIn(0f, 1f))
-    val scaleY = lerp(startHeight / screenHeight, targetScaleY, expansionProgress.coerceIn(0f, 1f))
-
-    // Corner radius animation: starts rounded (like folder icon) to less rounded
-    val cornerRadius by animateFloatAsState(
-        targetValue = if (isExpanding) {
-            lerp(16f, 8f, expansionProgress.coerceIn(0f, 1f))
-        } else {
-            lerp(8f, 16f, expansionProgress.coerceIn(0f, 1f))
-        }.coerceAtLeast(0f),
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "expansion_corner"
-    )
-
-    // Border width that shrinks as we expand
-    val borderWidth by animateFloatAsState(
-        targetValue = if (isExpanding) {
-            lerp(2f, 0f, expansionProgress.coerceIn(0f, 1f))
-        } else {
-            lerp(0f, 2f, expansionProgress.coerceIn(0f, 1f))
-        },
-        animationSpec = tween(250),
-        label = "expansion_border"
-    )
-
-    // Icon scale with bounce - shrinks as container expands
-    val iconScale by animateFloatAsState(
-        targetValue = if (isExpanding) {
-            lerp(1f, 0.6f, expansionProgress.coerceIn(0f, 1f))
-        } else {
-            lerp(0.6f, 1f, expansionProgress.coerceIn(0f, 1f))
-        },
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "expansion_icon_scale"
-    )
-
-    // Icon alpha - fades out as we transition
-    val iconAlpha by animateFloatAsState(
-        targetValue = if (isExpanding) {
-            if (expansionProgress > 0.7f) 0f else 1f
-        } else {
-            if (expansionProgress > 0.3f) 1f else 0f
-        },
-        animationSpec = tween(200),
-        label = "expansion_icon_alpha"
-    )
-
-    // Text alpha - fades out during transition
-    val textAlpha by animateFloatAsState(
-        targetValue = if (isExpanding) {
-            if (expansionProgress > 0.6f) 0f else 1f
-        } else {
-            if (expansionProgress > 0.4f) 1f else 0f
-        },
-        animationSpec = tween(200),
-        label = "expansion_text_alpha"
-    )
-
-    // Overall overlay alpha - subtle background dim
-    val overlayAlpha by animateFloatAsState(
-        targetValue = if (isExpanding) {
-            expansionProgress * 0.5f  // Max 50% opacity for subtle dim
-        } else {
-            (1f - expansionProgress) * 0.5f
-        },
-        animationSpec = tween(300),
-        label = "expansion_overlay_alpha"
-    )
-
-    // Content alpha for the morphing container
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (isExpanding) {
-            if (expansionProgress > 0.8f) 0f else 1f
-        } else {
-            if (expansionProgress > 0.2f) 1f else 0f
-        },
-        animationSpec = tween(250),
-        label = "expansion_content_alpha"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                this.alpha = overlayAlpha
-            }
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.3f)),
-        contentAlignment = Alignment.Center
-    ) {
-        // Morphing container that expands from folder position
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    // Scale from the folder position
-                    transformOrigin = TransformOrigin(
-                        pivotFractionX = (startX / screenWidth).coerceIn(0f, 1f),
-                        pivotFractionY = (startY / screenHeight).coerceIn(0f, 1f)
-                    )
-                    this.scaleX = scaleX
-                    this.scaleY = scaleY
-                    this.alpha = contentAlpha
-                    shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0f).dp)
-                    clip = true
-                }
-                .border(
-                    width = borderWidth.dp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(cornerRadius.coerceAtLeast(0f).dp)
-                )
-                .background(
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-                )
-        ) {
-            // Folder icon and name that fade out during transition
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                // Folder icon with scale animation
-                Icon(
-                    imageVector = Icons.Filled.Folder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .graphicsLayer {
-                            this.scaleX = iconScale
-                            this.scaleY = iconScale
-                            this.alpha = iconAlpha
-                        }
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Folder name with fade animation
-                Text(
-                    text = folderName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.graphicsLayer {
-                        alpha = textAlpha
-                    }
-                )
-            }
-        }
-    }
-}
-
-/**
- * Linear interpolation helper for smooth animations.
- */
-private fun lerp(start: Float, stop: Float, fraction: Float): Float {
-    return start + (stop - start) * fraction
 }
 
 private fun isTextFile(fileName: String): Boolean {

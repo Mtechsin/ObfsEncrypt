@@ -48,6 +48,8 @@ class FileManagerViewModelTest {
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var appDirectoryManager: AppDirectoryManager
     private lateinit var biometricAuthManager: BiometricAuthManager
+    private lateinit var quickAccessRepository: com.obfs.encrypt.data.QuickAccessRepository
+    private lateinit var recentFoldersRepository: com.obfs.encrypt.data.RecentFoldersRepository
 
     // System under test
     private lateinit var viewModel: FileManagerViewModel
@@ -69,6 +71,8 @@ class FileManagerViewModelTest {
         settingsRepository = mockk(relaxed = true)
         appDirectoryManager = mockk(relaxed = true)
         biometricAuthManager = mockk(relaxed = true)
+        quickAccessRepository = mockk(relaxed = true)
+        recentFoldersRepository = mockk(relaxed = true)
 
         // Mock repository flows
         every { settingsRepository.secureDeleteOriginals } returns flowOf(true)
@@ -81,7 +85,10 @@ class FileManagerViewModelTest {
         testFile2 = File(testRoot, "file2.txt").apply { createNewFile() }
 
         viewModel = FileManagerViewModel(
-            application = application
+            application = application,
+            settingsRepository = settingsRepository,
+            quickAccessRepository = quickAccessRepository,
+            recentFoldersRepository = recentFoldersRepository
         )
     }
 

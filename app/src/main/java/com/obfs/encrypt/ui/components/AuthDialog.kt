@@ -220,117 +220,201 @@ fun ForgotPasswordDialog(
     onPasswordReset: () -> Unit
 ) {
     val context = LocalContext.current
-    var password by remember { mutableStateOf("") }
+    var answer by remember { mutableStateOf("") }
+    var answerError by remember { mutableStateOf<String?>(null) }
+    var isAnswerCorrect by remember { mutableStateOf(false) }
+    
+    // Reset password states
+    var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var resetError by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-        },
-        title = {
-            Text(
-                text = stringResource(R.string.reset_password),
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+    val securityQuestion = remember { appPasswordManager.getSecurityQuestion() ?: context.getString(R.string.no_security_question_set) }
+
+    if (!isAnswerCorrect) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
                 Text(
-                    text = stringResource(R.string.reset_password_info),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = stringResource(R.string.security_question),
+                    fontWeight = FontWeight.Bold
                 )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = {
-                        password = it
-                        error = null
-                    },
-                    label = { Text(stringResource(R.string.new_password)) },
-                    singleLine = true,
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = null
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = confirmPassword,
-                    onValueChange = {
-                        confirmPassword = it
-                        error = null
-                    },
-                    label = { Text(stringResource(R.string.confirm_password)) },
-                    singleLine = true,
-                    visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
-                            Icon(
-                                imageVector = if (confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = null
-                            )
-                        }
-                    },
-                    isError = error != null,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (error != null) {
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = error!!,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 4.dp)
+                        text = stringResource(R.string.answer_question_to_reset),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    when {
-                        password.isEmpty() -> {
-                            error = context.getString(R.string.password_cannot_be_empty)
-                        }
-                        password != confirmPassword -> {
-                            error = context.getString(R.string.passwords_do_not_match)
-                        }
-                        else -> {
-                            appPasswordManager.setPassword(password)
-                            onPasswordReset()
-                        }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = securityQuestion,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = answer,
+                        onValueChange = {
+                            answer = it
+                            answerError = null
+                        },
+                        label = { Text(stringResource(R.string.answer)) },
+                        singleLine = true,
+                        isError = answerError != null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (answerError != null) {
+                        Text(
+                            text = answerError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                 }
-            ) {
-                Text(stringResource(R.string.reset))
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (appPasswordManager.verifySecurityAnswer(answer)) {
+                            isAnswerCorrect = true
+                        } else {
+                            answerError = context.getString(R.string.incorrect_answer)
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.verify))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.cancel))
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
+        )
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(
+                    text = stringResource(R.string.reset_password),
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(R.string.reset_password_info),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = {
+                            newPassword = it
+                            resetError = null
+                        },
+                        label = { Text(stringResource(R.string.new_password)) },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = {
+                            confirmPassword = it
+                            resetError = null
+                        },
+                        label = { Text(stringResource(R.string.confirm_password)) },
+                        singleLine = true,
+                        visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        isError = resetError != null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (resetError != null) {
+                        Text(
+                            text = resetError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        when {
+                            newPassword.isEmpty() -> {
+                                resetError = context.getString(R.string.password_cannot_be_empty)
+                            }
+                            newPassword != confirmPassword -> {
+                                resetError = context.getString(R.string.passwords_do_not_match)
+                            }
+                            else -> {
+                                appPasswordManager.setPassword(newPassword)
+                                onPasswordReset()
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.reset))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.cancel))
+                }
             }
-        }
-    )
+        )
+    }
 }
 
 @Composable

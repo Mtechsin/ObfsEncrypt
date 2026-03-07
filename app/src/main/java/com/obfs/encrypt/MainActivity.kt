@@ -90,9 +90,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Initialize app lock manager
-        appLockManager.init()
-
         // Enable edge-to-edge display for modern Android
         enableEdgeToEdge()
 
@@ -130,7 +127,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 appLockManager.isLocked.collect { isLocked ->
-                    showBiometricDialog = isLocked
+                    val isLockEnabled = appLockManager.isLockEnabled.value
+                    val isPasswordSet = appPasswordManager.isPasswordSet()
+                    showBiometricDialog = isLocked && isLockEnabled && isPasswordSet
                 }
             }
         }

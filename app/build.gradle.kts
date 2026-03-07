@@ -134,6 +134,7 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.59.2")
     kspAndroidTest("com.google.dagger:hilt-compiler:2.59.2")
+    androidTestImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
     
     // Baseline profiles for faster startup (optional, can be generated later)
     // baselineProfile(project(":benchmarks"))

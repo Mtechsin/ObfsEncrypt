@@ -8,8 +8,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -227,7 +225,7 @@ private fun RefreshIndicatorPill(
  * Designed for butter-smooth 120FPS scrolling even with thousands of files.
  * Features a premium custom pull-to-refresh with spring physics and animated indicator.
  */
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun OptimizedFileList(
     filesAndFolders: List<FileItem>,
@@ -242,22 +240,39 @@ fun OptimizedFileList(
     onRefresh: () -> Unit,
     onToggleFavorite: (String) -> Unit = {},
     onFilePreview: (FileItem) -> Unit = {},
-    onFolderClick: ((FileItem, Rect) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    onFolderClick: ((FileItem, Rect?) -> Unit)? = null,
+    sharedTransitionScope: androidx.compose.animation.SharedTransitionScope? = null,
+    animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null,
+    modifier: Modifier = Modifier,
+    currentPath: String? = null,
+    onSaveScrollPosition: ((String, Int, Int) -> Unit)? = null,
+    initialScrollPosition: Pair<Int, Int>? = null
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialScrollPosition?.first ?: 0,
+        initialFirstVisibleItemScrollOffset = initialScrollPosition?.second ?: 0
+    )
     val coroutineScope = rememberCoroutineScope()
     val hasSelection = selectedItems.isNotEmpty()
     val context = LocalContext.current
 
-    // Auto-scroll to top when directory changes
+    // Auto-scroll to top when directory changes - only if we don't have an initial position
     var previousDirectoryHash by remember { mutableStateOf(0) }
     LaunchedEffect(filesAndFolders.size) {
         val currentHash = filesAndFolders.hashCode()
         if (previousDirectoryHash != 0 && previousDirectoryHash != currentHash) {
-            listState.scrollToItem(0)
+            if (initialScrollPosition == null) {
+                listState.scrollToItem(0)
+            }
         }
         previousDirectoryHash = currentHash
+    }
+
+    // Save scroll position whenever it changes
+    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+        if (currentPath != null && onSaveScrollPosition != null) {
+            onSaveScrollPosition(currentPath, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+        }
     }
 
     // Pull-to-refresh state
@@ -344,18 +359,14 @@ fun OptimizedFileList(
                         isSelected = isSelected,
                         hasAnySelection = hasSelection,
                         isFavorite = isFavorite,
-                        onClick = { 
-                            if (item.isDirectory && onFolderClick != null) {
-                                // Folder click with bounds capture will be handled by onFolderClick
-                            } else {
-                                onFileClick(item) 
-                            }
-                        },
+                        onClick = { onFileClick(item) },
                         onLongClick = { onFileLongClick(item) },
                         onToggleSelect = { onToggleSelect(item.file) },
                         onToggleFavorite = { onToggleFavorite(item.file.absolutePath) },
                         onThumbnailClick = { onFilePreview(item) },
-                        onFolderClick = onFolderClick
+                        onFolderClick = onFolderClick,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedContentScope = animatedContentScope
                     )
                 }
             }
@@ -376,6 +387,7 @@ fun OptimizedFileList(
 /**
  * Disposable wrapper for file items to ensure proper cleanup and recomposition optimization.
  */
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 private fun DisposableKeyedFileItem(
     item: FileItem,
@@ -387,7 +399,9 @@ private fun DisposableKeyedFileItem(
     onToggleSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
     onThumbnailClick: () -> Unit,
-    onFolderClick: ((FileItem, Rect) -> Unit)? = null
+    onFolderClick: ((FileItem, Rect?) -> Unit)? = null,
+    sharedTransitionScope: androidx.compose.animation.SharedTransitionScope? = null,
+    animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
     // Use remember to cache expensive computations
@@ -417,14 +431,16 @@ private fun DisposableKeyedFileItem(
         onToggleSelect = onToggleSelect,
         onToggleFavorite = onToggleFavorite,
         onThumbnailClick = onThumbnailClick,
-        onFolderClick = onFolderClick
+        onFolderClick = onFolderClick,
+        sharedTransitionScope = sharedTransitionScope,
+        animatedContentScope = animatedContentScope
     )
 }
 
 /**
  * Highly optimized file item row with minimal recomposition.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 private fun OptimizedFileItemRow(
     item: FileItem,
@@ -439,17 +455,38 @@ private fun OptimizedFileItemRow(
     onToggleSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
     onThumbnailClick: () -> Unit,
-    onFolderClick: ((FileItem, Rect) -> Unit)? = null
+    onFolderClick: ((FileItem, Rect?) -> Unit)? = null,
+    sharedTransitionScope: androidx.compose.animation.SharedTransitionScope? = null,
+    animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null
 ) {
     val isImage = fileType == FileType.IMAGE
     val fileColor = getColorForFileType(fileType)
     val isFolder = item.isDirectory
 
-    // Store folder bounds for animation - only updated on layout, not on click
+    // Store folder bounds for legacy animation if needed, but we prefer Container Transform
     var folderBounds by remember { mutableStateOf<Rect?>(null) }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isFolder && sharedTransitionScope != null && animatedContentScope != null) {
+                    with(sharedTransitionScope) {
+                        Modifier.sharedElement(
+                            rememberSharedContentState(key = "folder_${item.file.absolutePath}"),
+                            animatedVisibilityScope = animatedContentScope,
+                            boundsTransform = { _, _ ->
+                                tween(
+                                    durationMillis = 400,
+                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                )
+                            }
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            ),
         color = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
         } else {
@@ -462,7 +499,6 @@ private fun OptimizedFileItemRow(
                 .then(
                     if (isFolder && onFolderClick != null) {
                         Modifier.onGloballyPositioned { coordinates ->
-                            // Only capture bounds, don't trigger navigation
                             val topLeft = coordinates.localToRoot(Offset.Zero)
                             val bottomRight = coordinates.localToRoot(Offset(coordinates.size.width.toFloat(), coordinates.size.height.toFloat()))
                             folderBounds = Rect(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y)
@@ -473,9 +509,8 @@ private fun OptimizedFileItemRow(
                 )
                 .combinedClickable(
                     onClick = {
-                        if (isFolder && onFolderClick != null && folderBounds != null) {
-                            // User clicked - now trigger navigation with captured bounds
-                            onFolderClick(item, folderBounds!!)
+                        if (isFolder && onFolderClick != null) {
+                            onFolderClick(item, folderBounds)
                         } else {
                             onClick()
                         }
@@ -489,18 +524,6 @@ private fun OptimizedFileItemRow(
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                     } else {
                         Color.Transparent
-                    }
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {
-                        if (isFolder && onFolderClick != null && folderBounds != null) {
-                            // User clicked - now trigger navigation with captured bounds
-                            onFolderClick(item, folderBounds!!)
-                        } else {
-                            onClick()
-                        }
                     }
                 )
                 .padding(horizontal = 16.dp, vertical = 12.dp),

@@ -141,6 +141,7 @@ fun SettingsScreen(
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showRemovePasswordDialog by remember { mutableStateOf(false) }
     var showSecurityQuestionDialog by remember { mutableStateOf(false) }
+    var showPasswordForAppLockDialog by remember { mutableStateOf(false) }
 
     // Language selection dialog
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -199,7 +200,7 @@ fun SettingsScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = MaterialTheme.colorScheme.surface
                 ),
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 4.dp)
             )
         }
     ) { paddingVals ->
@@ -207,14 +208,14 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingVals)
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Appearance Section
             SettingsSectionHeader(title = stringResource(R.string.appearance))
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             ThemeSelectorCard(
                 currentMode = currentThemeMode,
@@ -225,31 +226,31 @@ fun SettingsScreen(
                 onDynamicColorChanged = { viewModel.setDynamicColor(it) }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Language Selection
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.clickable { showLanguageDialog = true }
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Language,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(22.dp)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.language),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
@@ -265,20 +266,20 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Storage Permission Section
             SettingsSectionHeader(title = stringResource(R.string.storage_access))
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -289,13 +290,13 @@ fun SettingsScreen(
                         } else {
                             MaterialTheme.colorScheme.error
                         },
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(22.dp)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.storage_permission),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
@@ -311,24 +312,25 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             if (!hasStoragePermission) {
                 Button(
                     onClick = requestStoragePermission,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
                 ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                    Text(stringResource(R.string.grant_storage_permission))
+                    Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                    Text(stringResource(R.string.grant_storage_permission), style = MaterialTheme.typography.labelLarge)
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Security Preferences Section
             SettingsSectionHeader(title = stringResource(R.string.security))
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Password Authentication
             PasswordSettingCard(
@@ -340,12 +342,12 @@ fun SettingsScreen(
                 isSecurityQuestionSet = viewModel.appPasswordManager.isSecurityQuestionsEnabled()
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Biometric Authentication
             BiometricSettingCard(viewModel = viewModel)
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // App Lock
             AppLockSettingsCard(
@@ -353,16 +355,27 @@ fun SettingsScreen(
                 onToggleLock = { enabled ->
                     if (enabled) {
                         // Authenticate before enabling app lock
-                        scope.launch {
-                            val result = viewModel.biometricAuthManager.authenticate(
-                                activity = activity,
-                                title = context.getString(R.string.enable_app_lock),
-                                subtitle = context.getString(R.string.app_lock_subtitle)
-                            )
-                            if (result is BiometricResult.Success) {
-                                viewModel.enableAppLock()
+                        val biometricStatus = viewModel.biometricAuthManager.canAuthenticate()
+                        val isBiometricAvailable = biometricStatus == com.obfs.encrypt.security.BiometricStatus.AVAILABLE
+                        val isPasswordSet = viewModel.appPasswordManager.isPasswordSet()
+
+                        if (isBiometricAvailable) {
+                            // Use biometric if available
+                            scope.launch {
+                                val result = viewModel.biometricAuthManager.authenticate(
+                                    activity = activity,
+                                    title = context.getString(R.string.enable_app_lock),
+                                    subtitle = context.getString(R.string.app_lock_subtitle)
+                                )
+                                if (result is BiometricResult.Success) {
+                                    viewModel.enableAppLock()
+                                }
                             }
+                        } else if (isPasswordSet) {
+                            // Use password if biometric not available but password is set
+                            showPasswordForAppLockDialog = true
                         }
+                        // If neither biometric nor password is set, do nothing (toggle stays off)
                     } else {
                         viewModel.disableAppLock()
                     }
@@ -371,28 +384,28 @@ fun SettingsScreen(
                 currentTimeout = appLockTimeout
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Keyfile Management
             KeyfileSettingCard(viewModel = viewModel)
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Secure Delete
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.secure_shred_originals),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
@@ -408,24 +421,24 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Output Location Section
             SettingsSectionHeader(title = stringResource(R.string.output_location))
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(12.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.default_app_folder),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
@@ -436,7 +449,7 @@ fun SettingsScreen(
                         } else {
                             MaterialTheme.colorScheme.error
                         },
-                        modifier = Modifier.padding(vertical = 8.dp)
+                        modifier = Modifier.padding(vertical = 4.dp)
                     )
                     Text(
                         text = if (hasWriteAccess) {
@@ -526,7 +539,7 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 
@@ -602,25 +615,37 @@ fun SettingsScreen(
             onDismiss = { showSecurityQuestionDialog = false }
         )
     }
+
+    // Password dialog for enabling app lock (when biometric not available)
+    if (showPasswordForAppLockDialog) {
+        AppLockPasswordDialog(
+            appPasswordManager = viewModel.appPasswordManager,
+            onAuthSuccess = {
+                viewModel.enableAppLock()
+                showPasswordForAppLockDialog = false
+            },
+            onDismiss = { showPasswordForAppLockDialog = false }
+        )
+    }
 }
 
 @Composable
 private fun SettingsSectionHeader(title: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 8.dp)
+        modifier = Modifier.padding(vertical = 6.dp)
     ) {
         Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.3f),
-            modifier = Modifier.width(4.dp).height(24.dp)
+            shape = RoundedCornerShape(4.dp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+            modifier = Modifier.width(3.dp).height(18.dp)
         ) {}
         
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(10.dp))
         
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -1414,6 +1439,91 @@ private fun PasswordAuthDialog(
                 }
             ) {
                 Text(stringResource(R.string.enable_biometric))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun AppLockPasswordDialog(
+    appPasswordManager: AppPasswordManager,
+    onAuthSuccess: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    
+    val incorrectPasswordText = stringResource(R.string.incorrect_password)
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        },
+        title = {
+            Text(stringResource(R.string.enable_app_lock))
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.enter_password_to_enable_app_lock),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = {
+                        password = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.password)) },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (appPasswordManager.verifyPassword(password)) {
+                        onAuthSuccess()
+                    } else {
+                        error = incorrectPasswordText
+                    }
+                }
+            ) {
+                Text(stringResource(R.string.confirm))
             }
         },
         dismissButton = {

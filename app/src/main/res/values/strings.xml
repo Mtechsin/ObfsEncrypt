@@ -88,6 +88,7 @@
     <string name="not_available">Not available</string>
     <string name="set_password_first">Set a password first to enable biometric</string>
     <string name="enter_password_to_enable_biometric">Enter your password to enable biometric authentication</string>
+    <string name="enter_password_to_enable_app_lock">Enter your password to enable app lock</string>
     
     <!-- Password and Security -->
     <string name="app_password">App Password</string>
@@ -104,7 +105,12 @@
     <string name="incorrect_password">Incorrect password</string>
     <string name="remove_password_warning">Are you sure you want to remove the password? This will also remove your security question.</string>
     <string name="set_security_question">Set Security Question</string>
+    <string name="security_question">Security Question</string>
+    <string name="answer_question_to_reset">Please answer your security question to reset your password</string>
     <string name="security_question_label">Security Question</string>
+    <string name="no_security_question_set">No security question set</string>
+    <string name="answer">Answer</string>
+    <string name="incorrect_answer">Incorrect answer</string>
     <string name="select_question">Select a question</string>
     <string name="custom_question">Custom Question</string>
     <string name="custom_question_option">Custom Question...</string>
@@ -118,7 +124,6 @@
     <string name="forgot_password">Forgot Password?</string>
     <string name="verify">Verify</string>
     <string name="reset">Reset</string>
-    <string name="incorrect_answer">Incorrect answer</string>
     <string name="save">Save</string>
     <string name="remove">Remove</string>
     <string name="set_new_password">Set New Password</string>

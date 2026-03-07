@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.obfs.encrypt.data.SettingsRepository
+import com.obfs.encrypt.security.AppLockManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -23,6 +24,9 @@ class ObfsApp : Application(), Configuration.Provider {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var appLockManager: AppLockManager
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -31,5 +35,8 @@ class ObfsApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         // WorkManager auto-initializes using Configuration.Provider
+        
+        // Initialize app lock manager for process-wide lifecycle observation
+        appLockManager.init()
     }
 }

@@ -215,4 +215,11 @@
     <string name="language_english">الإنجليزية</string>
     <string name="language_arabic">العربية</string>
     <string name="language_system">افتراضي النظام</string>
+    <string name="set_security_question">تعيين سؤال الأمان</string>
+    <string name="security_question">سؤال الأمان</string>
+    <string name="answer_question_to_reset">يرجى الإجابة على سؤال الأمان الخاص بك لإعادة تعيين كلمة المرور</string>
+    <string name="security_question_label">سؤال الأمان</string>
+    <string name="no_security_question_set">لم يتم تعيين سؤال أمان</string>
+    <string name="answer">الإجابة</string>
+    <string name="incorrect_answer">إجابة غير صحيحة</string>
 </resources>

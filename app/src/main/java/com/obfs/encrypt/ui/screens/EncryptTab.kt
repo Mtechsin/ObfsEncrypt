@@ -200,7 +200,7 @@ fun EncryptTab(
             subtitle = stringResource(R.string.select_files_subtitle)
         )
 
-        ModernQuickActionGrid(
+        EncryptTabQuickActionGrid(
             onSingleFile = { pickType = PickType.SINGLE },
             onMultiFile = { pickType = PickType.MULTIPLE },
             onFolder = { pickType = PickType.FOLDER }
@@ -214,7 +214,7 @@ fun EncryptTab(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        SecurityTipsCard()
+        EncryptTabSecurityTipsCard()
 
         Spacer(modifier = Modifier.height(100.dp))
     }
@@ -318,7 +318,7 @@ private fun SectionHeader(
 }
 
 @Composable
-private fun ModernQuickActionGrid(
+private fun EncryptTabQuickActionGrid(
     onSingleFile: () -> Unit,
     onMultiFile: () -> Unit,
     onFolder: () -> Unit
@@ -582,7 +582,7 @@ private fun ModernToolsSection(
 }
 
 @Composable
-private fun SecurityTipsCard() {
+private fun EncryptTabSecurityTipsCard() {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()

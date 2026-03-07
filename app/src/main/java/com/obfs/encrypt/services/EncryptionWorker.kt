@@ -252,24 +252,21 @@ class EncryptionWorker @AssistedInject constructor(
         deleteOriginal: Boolean,
         enableIntegrity: Boolean
     ) {
-        // Implementation similar to MainViewModel's processSingleEncryption
-        // This is a simplified version - you'd want to reuse the actual implementation
         val cr = applicationContext.contentResolver
-        val file = File(uri.path ?: return)
-        val fileSize = file.length()
+        val sourceFile = androidx.documentfile.provider.DocumentFile.fromSingleUri(applicationContext, uri)
+            ?: throw IllegalArgumentException("Could not read source file")
+        val fileSize = sourceFile.length()
+
+        val outputUri = createOutputFile(uri, encrypt = true)
 
         cr.openInputStream(uri)?.use { inputStream ->
-            // Create output file
-            val outputFile = createOutputFile(uri, encrypt = true)
-            cr.openOutputStream(outputFile)?.use { outputStream ->
+            cr.openOutputStream(outputUri)?.use { outputStream ->
                 encryptionHelper.encrypt(
                     inputStream = inputStream,
                     outputStream = outputStream,
                     password = password,
                     method = method,
-                    progressCallback = { current, total, _ ->
-                        // Progress is handled at file level in this worker
-                    },
+                    progressCallback = { current, total, _ -> },
                     totalSize = fileSize,
                     keyfileBytes = null,
                     enableIntegrityCheck = enableIntegrity
@@ -278,8 +275,7 @@ class EncryptionWorker @AssistedInject constructor(
         }
 
         if (deleteOriginal) {
-            // Secure delete original file
-            // SecureDelete.secureDelete(applicationContext, file)
+            com.obfs.encrypt.data.SecureDelete.secureDelete(applicationContext, sourceFile)
         }
     }
 
@@ -293,21 +289,20 @@ class EncryptionWorker @AssistedInject constructor(
         verifyIntegrity: Boolean
     ) {
         val cr = applicationContext.contentResolver
-        val file = File(uri.path ?: return)
-        val fileSize = file.length()
+        val sourceFile = androidx.documentfile.provider.DocumentFile.fromSingleUri(applicationContext, uri)
+            ?: throw IllegalArgumentException("Cannot read source file")
+        val fileSize = sourceFile.length()
+
+        val outputUri = createOutputFile(uri, encrypt = false)
 
         cr.openInputStream(uri)?.use { inputStream ->
-            // Create output file
-            val outputFile = createOutputFile(uri, encrypt = false)
-            cr.openOutputStream(outputFile)?.use { outputStream ->
+            cr.openOutputStream(outputUri)?.use { outputStream ->
                 encryptionHelper.decrypt(
                     inputStream = inputStream,
                     outputStream = outputStream,
                     password = password,
                     method = EncryptionMethod.STANDARD,
-                    progressCallback = { current, total, _ ->
-                        // Progress is handled at file level
-                    },
+                    progressCallback = { current, total, _ -> },
                     totalSize = fileSize,
                     keyfileBytes = null,
                     verifyIntegrity = verifyIntegrity
@@ -316,26 +311,42 @@ class EncryptionWorker @AssistedInject constructor(
         }
 
         if (deleteOriginal) {
-            // Secure delete encrypted file
-            // SecureDelete.secureDelete(applicationContext, file)
+            com.obfs.encrypt.data.SecureDelete.secureDelete(applicationContext, sourceFile)
         }
     }
 
     /**
      * Create output file for encryption/decryption result.
+     * Ensures no conflicts by using unique filenames.
      */
     private fun createOutputFile(inputUri: Uri, encrypt: Boolean): Uri {
-        val file = File(inputUri.path ?: "")
-        val outputDir = file.parentFile ?: applicationContext.filesDir
+        val cr = applicationContext.contentResolver
+        val sourceFile = androidx.documentfile.provider.DocumentFile.fromSingleUri(applicationContext, inputUri)
+            ?: throw IllegalArgumentException("Could not access source file")
+        
+        val parent = sourceFile.parentFile ?: throw IllegalStateException("No parent folder")
         
         val outputName = if (encrypt) {
-            "${file.name}.obfs"
+            "${sourceFile.name}.obfs"
         } else {
-            file.name.removeSuffix(".obfs")
+            sourceFile.name?.removeSuffix(".obfs") ?: "decrypted_${System.currentTimeMillis()}"
         }
 
-        val outputFile = File(outputDir, outputName)
-        return Uri.fromFile(outputFile)
+        // Handle conflict resolution
+        var finalName = outputName
+        var counter = 1
+        while (parent.findFile(finalName) != null) {
+            val base = if (outputName.contains(".")) outputName.substringBeforeLast(".") else outputName
+            val ext = if (outputName.contains(".")) ".${outputName.substringAfterLast(".")}" else ""
+            finalName = "$base ($counter)$ext"
+            counter++
+        }
+
+        val mimeType = if (encrypt) "application/octet-stream" else "*/*"
+        val newFile = parent.createFile(mimeType, finalName) 
+            ?: throw IllegalStateException("Failed to create output file")
+            
+        return newFile.uri
     }
 
     /**

@@ -71,15 +71,33 @@ class AppLockManager @Inject constructor(
 
     private var lockTimeoutMs = 0L
     private var backgroundTime = 0L
-    private var isInBackground = false
+    private var isInBackground = true
+    private var isInitialized = false
 
     /**
      * Initialize the app lock manager.
      * Call this in Application.onCreate()
      */
     fun init() {
+        if (isInitialized) return
+        isInitialized = true
+        
+        // Load initial values synchronously to ensure they're available before lifecycle callbacks
+        // Use runBlocking for initialization only - acceptable since this runs once at app start
+        kotlinx.coroutines.runBlocking {
+            _isLockEnabled.value = settingsRepository.appLockEnabled.first()
+            lockTimeoutMs = settingsRepository.appLockTimeout.first()
+            _requirePassword.value = settingsRepository.appLockRequirePassword.first()
+        }
+        
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         
+        // If app lock is disabled initially, ensure we're not locked
+        if (!_isLockEnabled.value) {
+            _isLocked.value = false
+        }
+        
+        // Then observe for changes
         scope.launch {
             settingsRepository.appLockEnabled.collect { enabled ->
                 _isLockEnabled.value = enabled
@@ -120,19 +138,21 @@ class AppLockManager @Inject constructor(
 
     override fun onStart(owner: LifecycleOwner) {
         super.onStart(owner)
-        isInBackground = false
         
-        // Check if we should unlock based on timeout
+        // Check if we should unlock based on timeout - do this BEFORE setting isInBackground = false
         if (lockTimeoutMs > 0) {
             val timeInBackground = System.currentTimeMillis() - backgroundTime
             if (timeInBackground < lockTimeoutMs) {
                 // Still within timeout window, don't lock
+                isInBackground = false
                 return
             }
         }
         
         // Check lock status when coming to foreground
+        // Must check while isInBackground is still true
         checkAndLock()
+        isInBackground = false
     }
 
     /**

@@ -82,6 +82,9 @@ class FileManagerViewModel @Inject constructor(
     private val directoryCache = mutableMapOf<String, List<FileItem>>()
     private val maxCacheSize = 50 // Limit cache to prevent memory issues
 
+    // Scroll position persistence across navigation
+    private val scrollPositions = mutableMapOf<String, Pair<Int, Int>>()
+
     // Performance: Debounce rapid navigation
     private var loadJob: Job? = null
 
@@ -106,6 +109,18 @@ class FileManagerViewModel @Inject constructor(
             }
         }
         loadDirectory(rootDirectory)
+    }
+
+    fun saveScrollPosition(path: String, index: Int, offset: Int) {
+        scrollPositions[path] = index to offset
+    }
+
+    fun getScrollPosition(path: String): Pair<Int, Int>? {
+        return scrollPositions[path]
+    }
+
+    fun getCachedFiles(path: String): List<FileItem>? {
+        return directoryCache[path]
     }
 
     fun navigateTo(directory: File) {
@@ -442,6 +457,7 @@ class FileManagerViewModel @Inject constructor(
                 if (!forceRefresh) {
                     val cachedItems = directoryCache[cacheKey]
                     if (cachedItems != null) {
+                        // For cached items, we can update both path and files atomically for UI
                         _currentDirectory.value = directory
                         _filesAndFolders.value = cachedItems
                         _isLoading.value = false
@@ -450,8 +466,13 @@ class FileManagerViewModel @Inject constructor(
                     }
                 }
                 
-                // Load from disk with IO dispatcher
+                // If not in cache or forced refresh, we update the directory first
+                // to trigger the transition in UI, but keep old files until new ones are ready
+                // OR clear them if we want to show loading.
+                // To avoid "weird artifacts", we'll keep old files but marked as loading.
                 _currentDirectory.value = directory
+                
+                // Load from disk with IO dispatcher
                 val items = withContext(Dispatchers.IO) {
                     TraceSection.begin(TraceSections.FILE_SORT)
                     try {
@@ -481,7 +502,10 @@ class FileManagerViewModel @Inject constructor(
                 }
                 directoryCache[cacheKey] = items
                 
-                _filesAndFolders.value = items
+                // Update files only if we are still on the same directory (handling rapid navigation)
+                if (_currentDirectory.value.absolutePath == directory.absolutePath) {
+                    _filesAndFolders.value = items
+                }
             } catch (e: Exception) {
                 _error.value = e.localizedMessage ?: "Unknown error"
             } finally {

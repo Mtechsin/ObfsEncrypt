@@ -239,7 +239,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun AnimatedNavigationBar(
+internal fun AnimatedNavigationBar(
     items: List<BottomNavItem>,
     selectedIndex: Int,
     onItemSelected: (Int) -> Unit
@@ -693,7 +693,7 @@ private fun EncryptTabContent(
 }
 
 @Composable
-private fun ModernHeroHeader(encryptedCount: Int) {
+internal fun ModernHeroHeader(encryptedCount: Int) {
     val density = LocalDensity.current
 
     ElevatedCard(
@@ -858,7 +858,7 @@ private fun SectionHeader(
 }
 
 @Composable
-private fun ModernQuickActionGrid(
+internal fun ModernQuickActionGrid(
     onSingleFile: () -> Unit,
     onMultiFile: () -> Unit,
     onFolder: () -> Unit
@@ -1044,7 +1044,7 @@ private fun ModernWideActionCard(
 }
 
 @Composable
-private fun ModernToolsSection(
+internal fun ModernToolsSection(
     onDecryptClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
@@ -1362,7 +1362,7 @@ private fun ActivityItem(activity: RecentActivity) {
 }
 
 @Composable
-private fun SecurityTipsCard() {
+internal fun SecurityTipsCard() {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
