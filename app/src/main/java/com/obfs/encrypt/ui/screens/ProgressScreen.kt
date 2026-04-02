@@ -58,7 +58,6 @@ import com.obfs.encrypt.ui.theme.Motion
 import com.obfs.encrypt.ui.theme.isAMOLEDTheme
 import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContainerColor
 import com.obfs.encrypt.ui.theme.amoledOutlinedButtonContentColor
-import com.obfs.encrypt.ui.theme.pressClickEffect
 import com.obfs.encrypt.viewmodel.MainViewModel
 
 /**
@@ -212,8 +211,7 @@ fun ProgressScreen(
                         onClick = onNavigateBack,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(56.dp)
-                            .pressClickEffect(),
+                            .height(56.dp),
                         shape = MaterialTheme.shapes.large
                     ) {
                         Text(stringResource(R.string.return_home), fontWeight = FontWeight.Bold)
@@ -249,8 +247,7 @@ fun ProgressScreen(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(56.dp)
-                                .pressClickEffect(),
+                                .height(56.dp),
                             shape = MaterialTheme.shapes.large
                         ) {
                             Text(stringResource(R.string.return_home), fontWeight = FontWeight.Bold)
@@ -264,8 +261,7 @@ fun ProgressScreen(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(56.dp)
-                                .pressClickEffect(),
+                                .height(56.dp),
                             shape = MaterialTheme.shapes.large
                         ) {
                             Text(stringResource(R.string.return_home), fontWeight = FontWeight.Bold)
@@ -347,8 +343,7 @@ fun ProgressScreen(
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(56.dp)
-                                    .pressClickEffect(),
+                                    .height(56.dp),
                                 shape = MaterialTheme.shapes.large
                             ) {
                                 Icon(
@@ -363,8 +358,7 @@ fun ProgressScreen(
                                 onClick = { viewModel.togglePause() },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(56.dp)
-                                    .pressClickEffect(),
+                                    .height(56.dp),
                                 shape = MaterialTheme.shapes.large
                             ) {
                                 Icon(
@@ -390,8 +384,7 @@ fun ProgressScreen(
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(56.dp)
-                                    .pressClickEffect(),
+                                    .height(56.dp),
                                 shape = MaterialTheme.shapes.large
                             ) {
                                 Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
@@ -409,8 +402,7 @@ fun ProgressScreen(
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(56.dp)
-                                    .pressClickEffect(),
+                                    .height(56.dp),
                                 shape = MaterialTheme.shapes.large
                             ) {
                                 Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.padding(end = 8.dp))

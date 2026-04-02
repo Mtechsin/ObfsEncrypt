@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.test)
-    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -12,12 +11,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
-    }
-
     defaultConfig {
         minSdk = 24
         targetSdk = 35
@@ -26,7 +19,6 @@ android {
     }
 
     buildTypes {
-        // This benchmark buildType is used for benchmarking and Baseline Profile generation.
         create("benchmark") {
             isDebuggable = false
             signingConfig = getByName("debug").signingConfig
@@ -42,7 +34,7 @@ dependencies {
     implementation("androidx.test.ext:junit:1.2.1")
     implementation("androidx.test.espresso:espresso-core:3.6.1")
     implementation("androidx.test.uiautomator:uiautomator:2.3.0")
-    implementation("androidx.benchmark:benchmark-macro-junit4:1.3.3")
+    implementation("androidx.benchmark:benchmark-macro-junit4:1.3.4")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 }
 

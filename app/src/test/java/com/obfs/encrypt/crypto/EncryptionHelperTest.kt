@@ -1,6 +1,11 @@
 package com.obfs.encrypt.crypto
 
 import com.google.common.truth.Truth.assertThat
+import com.lambdapioneer.argon2kt.Argon2Kt
+import com.lambdapioneer.argon2kt.Argon2Mode
+import com.lambdapioneer.argon2kt.Argon2KtResult
+import io.mockk.every
+import io.mockk.mockk
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -30,10 +35,26 @@ class EncryptionHelperTest {
     val tempFolder = TemporaryFolder()
 
     private lateinit var encryptionHelper: EncryptionHelper
+    private lateinit var mockArgon2Kt: Argon2Kt
 
     @Before
     fun setup() {
-        encryptionHelper = EncryptionHelper()
+        mockArgon2Kt = mockk(relaxed = true)
+        // Mock Argon2Kt to return a fixed hash to avoid native library calls
+        val mockResult = mockk<Argon2KtResult>(relaxed = true)
+        every { mockResult.rawHashAsByteArray() } returns ByteArray(32) { 0 }
+        every { mockArgon2Kt.hash(
+                any<Argon2Mode>(),
+                any<ByteArray>(),
+                any<ByteArray>(),
+                any<Int>(),
+                any<Int>(),
+                any<Int>(),
+                any<Int>(),
+                any<com.lambdapioneer.argon2kt.Argon2Version>()
+        )} returns mockResult
+        
+        encryptionHelper = EncryptionHelper(mockArgon2Kt)
     }
 
     @Test

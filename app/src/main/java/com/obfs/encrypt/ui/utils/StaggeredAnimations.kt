@@ -1,8 +1,11 @@
 package com.obfs.encrypt.ui.utils
 
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -12,13 +15,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.obfs.encrypt.ui.theme.Motion
 import kotlinx.coroutines.delay
@@ -26,12 +28,8 @@ import kotlinx.coroutines.delay
 /**
  * StaggeredAnimations - Provides premium staggered entrance animations for lists
  *
- * Features:
- * - Staggered fade-in with spring animation
- * - Staggered slide-up entrance
- * - Staggered scale-in effect
- * - Configurable delay per item
- * - Haptic feedback integration
+ * Uses AnimatedVisibility instead of per-item Animatable + LaunchedEffect
+ * to eliminate per-item coroutine overhead.
  */
 
 /**
@@ -41,37 +39,26 @@ import kotlinx.coroutines.delay
 fun <T> StaggeredLazyColumn(
     items: List<T>,
     key: ((T) -> Any)? = null,
-    initialAlpha: Float = 0f,
-    initialOffsetY: Dp = 20.dp,
     animationDelay: Int = 50,
-    animationSpec: AnimationSpec<Float> = Motion.SnappySpring,
-    itemContent: @Composable ColumnScope.(T) -> Unit
+    content: @Composable ColumnScope.(T) -> Unit
 ) {
-    val density = LocalDensity.current
-    val initialOffsetPx = with(density) { initialOffsetY.toPx() }
-    
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items.forEachIndexed { index, item ->
-            val alpha = remember { Animatable(initialAlpha) }
-            val offsetY = remember { Animatable(initialOffsetPx) }
-            
+            var visible by remember(key?.invoke(item) ?: item) { mutableStateOf(false) }
+
             LaunchedEffect(key?.invoke(item) ?: item) {
                 delay((index * animationDelay).toLong())
-                
-                alpha.animateTo(1f, animationSpec = animationSpec)
-                offsetY.animateTo(0f, animationSpec = animationSpec)
+                visible = true
             }
-            
-            Column(
-                modifier = Modifier
-                    .graphicsLayer {
-                        this.alpha = alpha.value
-                        translationY = offsetY.value
-                    }
+
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(animationSpec = Motion.SnappySpring),
+                exit = fadeOut()
             ) {
-                itemContent(item)
+                content(item)
             }
         }
     }
@@ -86,32 +73,26 @@ fun <T> StaggeredScaleColumn(
     key: ((T) -> Any)? = null,
     initialScale: Float = 0.85f,
     animationDelay: Int = 40,
-    animationSpec: AnimationSpec<Float> = Motion.SnappySpring,
-    itemContent: @Composable ColumnScope.(T) -> Unit
+    content: @Composable ColumnScope.(T) -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items.forEachIndexed { index, item ->
-            val scale = remember { Animatable(initialScale) }
-            val alpha = remember { Animatable(0f) }
-            
+            var visible by remember(key?.invoke(item) ?: item) { mutableStateOf(false) }
+
             LaunchedEffect(key?.invoke(item) ?: item) {
                 delay((index * animationDelay).toLong())
-                
-                scale.animateTo(1f, animationSpec = animationSpec)
-                alpha.animateTo(1f, animationSpec = animationSpec)
+                visible = true
             }
-            
-            Column(
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = scale.value
-                        scaleY = scale.value
-                        this.alpha = alpha.value
-                    }
+
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(animationSpec = Motion.SnappySpring) +
+                        scaleIn(initialScale = initialScale, animationSpec = Motion.SnappySpring),
+                exit = fadeOut()
             ) {
-                itemContent(item)
+                content(item)
             }
         }
     }
@@ -124,79 +105,53 @@ fun <T> StaggeredScaleColumn(
 fun <T> StaggeredSlideRow(
     items: List<T>,
     key: ((T) -> Any)? = null,
-    initialOffsetX: Dp = (-30).dp,
     animationDelay: Int = 50,
-    animationSpec: AnimationSpec<Float> = Motion.SnappySpring,
-    itemContent: @Composable RowScope.(T) -> Unit
+    content: @Composable RowScope.(T) -> Unit
 ) {
-    val density = LocalDensity.current
-    val initialOffsetPx = with(density) { initialOffsetX.toPx() }
-    
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         items.forEachIndexed { index, item ->
-            val offsetX = remember { Animatable(initialOffsetPx) }
-            val alpha = remember { Animatable(0f) }
-            
+            var visible by remember(key?.invoke(item) ?: item) { mutableStateOf(false) }
+
             LaunchedEffect(key?.invoke(item) ?: item) {
                 delay((index * animationDelay).toLong())
-                
-                offsetX.animateTo(0f, animationSpec = animationSpec)
-                alpha.animateTo(1f, animationSpec = animationSpec)
+                visible = true
             }
-            
-            Row(
-                modifier = Modifier
-                    .graphicsLayer {
-                        translationX = offsetX.value
-                        this.alpha = alpha.value
-                    }
+
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(animationSpec = Motion.SnappySpring),
+                exit = fadeOut()
             ) {
-                itemContent(item)
+                content(item)
             }
         }
     }
 }
 
 /**
- * Animate individual item with spring entrance
- * Use for single items or when you want manual control
+ * Animate individual item with spring entrance.
+ * Use for single items or when you want manual control.
  */
 @Composable
 fun AnimateItemEntrance(
     key: Any?,
-    initialAlpha: Float = 0f,
-    initialOffsetY: Dp = 15.dp,
-    initialScale: Float = 1f,
     animationDelay: Int = 0,
-    animationSpec: AnimationSpec<Float> = Motion.SnappySpring,
     content: @Composable () -> Unit
 ) {
-    val density = LocalDensity.current
-    val initialOffsetPx = with(density) { initialOffsetY.toPx() }
-    
-    val alpha = remember { Animatable(initialAlpha) }
-    val offsetY = remember { Animatable(initialOffsetPx) }
-    val scale = remember { Animatable(initialScale) }
-    
+    var visible by remember(key) { mutableStateOf(false) }
+
     LaunchedEffect(key) {
         delay(animationDelay.toLong())
-        
-        alpha.animateTo(1f, animationSpec = animationSpec)
-        offsetY.animateTo(0f, animationSpec = animationSpec)
-        scale.animateTo(1f, animationSpec = animationSpec)
+        visible = true
     }
-    
-    Column(
-        modifier = Modifier
-            .graphicsLayer {
-                this.alpha = alpha.value
-                translationY = offsetY.value
-                scaleX = scale.value
-                scaleY = scale.value
-            }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = Motion.SnappySpring),
+        exit = fadeOut()
     ) {
         content()
     }
@@ -216,29 +171,20 @@ fun <T> BouncyListColumn(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items.forEachIndexed { index, item ->
-            val scale = remember { Animatable(0.8f) }
-            val alpha = remember { Animatable(0f) }
-            
+            var visible by remember(key?.invoke(item) ?: item) { mutableStateOf(false) }
+
             LaunchedEffect(key?.invoke(item) ?: item) {
                 delay((index * animationDelay).toLong())
-                
-                scale.animateTo(
-                    1f,
-                    animationSpec = spring(
-                        dampingRatio = 0.5f,
-                        stiffness = 150f
-                    )
-                )
-                alpha.animateTo(1f, animationSpec = Motion.SnappySpring)
+                visible = true
             }
-            
-            Column(
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = scale.value
-                        scaleY = scale.value
-                        this.alpha = alpha.value
-                    }
+
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn() + scaleIn(
+                    initialScale = 0.8f,
+                    animationSpec = spring(dampingRatio = 0.5f, stiffness = 150f)
+                ),
+                exit = fadeOut()
             ) {
                 content(item)
             }
@@ -255,17 +201,13 @@ fun <T> StaggeredGrid(
     columns: Int = 2,
     key: ((T) -> Any)? = null,
     animationDelay: Int = 50,
-    content: @Composable ColumnScope.(T) -> Unit
+    content: @Composable (T) -> Unit
 ) {
-    val density = LocalDensity.current
-    val initialOffsetPx = with(density) { 20.dp.toPx() }
-    
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Group items into rows
         val rows = items.chunked(columns)
-        
+
         rows.forEachIndexed { rowIndex, rowItems ->
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -273,33 +215,26 @@ fun <T> StaggeredGrid(
             ) {
                 rowItems.forEachIndexed { colIndex, item ->
                     val index = rowIndex * columns + colIndex
-                    val alpha = remember { Animatable(0f) }
-                    val offsetY = remember { Animatable(initialOffsetPx) }
-                    val scale = remember { Animatable(0.9f) }
-                    
+                    var visible by remember(key?.invoke(item) ?: item) { mutableStateOf(false) }
+
                     LaunchedEffect(key?.invoke(item) ?: item) {
                         delay((index * animationDelay).toLong())
-                        
-                        alpha.animateTo(1f, animationSpec = Motion.SnappySpring)
-                        offsetY.animateTo(0f, animationSpec = Motion.SnappySpring)
-                        scale.animateTo(1f, animationSpec = Motion.SnappySpring)
+                        visible = true
                     }
-                    
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .graphicsLayer {
-                                this.alpha = alpha.value
-                                translationY = offsetY.value
-                                scaleX = scale.value
-                                scaleY = scale.value
-                            }
+
+                    AnimatedVisibility(
+                        visible = visible,
+                        enter = fadeIn() + scaleIn(
+                            initialScale = 0.9f,
+                            animationSpec = Motion.SnappySpring
+                        ),
+                        exit = fadeOut(),
+                        modifier = Modifier.weight(1f)
                     ) {
                         content(item)
                     }
                 }
-                
-                // Fill remaining columns with spacers
+
                 repeat(columns - rowItems.size) {
                     Spacer(modifier = Modifier.weight(1f))
                 }

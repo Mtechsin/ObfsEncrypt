@@ -13,6 +13,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +55,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.obfs.encrypt.data.QuickAccessData
 import com.obfs.encrypt.data.QuickAccessItem
-import com.obfs.encrypt.ui.theme.pressClickEffect
 
 @Composable
 fun QuickAccessSection(
@@ -61,6 +62,7 @@ fun QuickAccessSection(
     onFolderClick: (String) -> Unit,
     onFavoriteClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    currentPath: String? = null,
     isExpanded: Boolean = true,
     onToggleExpand: () -> Unit = {}
 ) {
@@ -126,7 +128,8 @@ fun QuickAccessSection(
                     QuickAccessCard(
                         item = item,
                         onClick = { onFolderClick(item.path) },
-                        onFavoriteClick = { onFavoriteClick(item.path) }
+                        onFavoriteClick = { onFavoriteClick(item.path) },
+                        isSelected = currentPath == item.path
                     )
                 }
             }
@@ -139,34 +142,57 @@ fun QuickAccessCard(
     item: QuickAccessItem,
     onClick: () -> Unit,
     onFavoriteClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSelected: Boolean = false
 ) {
-    val backgroundColor by animateColorAsState(
-        targetValue = if (item.isFavorite) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-        } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.3f)
-        },
-        label = "backgroundColor"
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else if (isSelected) 1.05f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.6f,
+            stiffness = 800f
+        ),
+        label = "scale"
     )
-
-    val borderColor by animateColorAsState(
-        targetValue = if (item.isFavorite) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-        } else {
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+    
+    val isDarkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+    val cardBackgroundColor by animateColorAsState(
+        targetValue = when {
+            isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            item.isFavorite -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            isDarkTheme -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+            else -> Color.Transparent
         },
+        label = "cardBackgroundColor"
+    )
+    
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
         label = "borderColor"
+    )
+    
+    val borderWidth by animateFloatAsState(
+        targetValue = if (isSelected) 2f else 1f,
+        label = "borderWidth"
     )
 
     Card(
         modifier = modifier
             .width(100.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+            .scale(scale)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        colors = CardDefaults.cardColors(containerColor = cardBackgroundColor),
         shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected) 4.dp else 0.dp
+        ),
+        border = BorderStroke(borderWidth.dp, borderColor)
     ) {
         Column(
             modifier = Modifier
@@ -175,27 +201,42 @@ fun QuickAccessCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            val iconBackground by animateColorAsState(
+                targetValue = when {
+                    isSelected -> MaterialTheme.colorScheme.primary
+                    item.isFavorite -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                },
+                label = "iconBackground"
+            )
+            val iconTint by animateColorAsState(
+                targetValue = when {
+                    isSelected -> MaterialTheme.colorScheme.onPrimary
+                    item.isFavorite -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                label = "iconTint"
+            )
+            val textColor by animateColorAsState(
+                targetValue = when {
+                    isSelected -> MaterialTheme.colorScheme.primary
+                    item.isFavorite -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
+                label = "textColor"
+            )
+
             Box(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (item.isFavorite) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        }
-                    ),
+                    .background(iconBackground),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = item.icon,
                     contentDescription = item.title,
-                    tint = if (item.isFavorite) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    tint = iconTint,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -203,12 +244,8 @@ fun QuickAccessCard(
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (item.isFavorite) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                color = textColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 2.dp)
@@ -224,7 +261,7 @@ fun QuickAccessCard(
                     tint = if (item.isFavorite) {
                         Color(0xFFFFD700)
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     },
                     modifier = Modifier.size(16.dp)
                 )
@@ -237,7 +274,8 @@ fun QuickAccessCard(
 fun FavoritesSection(
     favoritePaths: Set<String>,
     onFolderClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPath: String? = null
 ) {
     val favorites = remember(favoritePaths) {
         QuickAccessData.getFavoritesFromPaths(favoritePaths)
@@ -268,7 +306,8 @@ fun FavoritesSection(
                     QuickAccessCard(
                         item = item,
                         onClick = { onFolderClick(item.path) },
-                        onFavoriteClick = { }
+                        onFavoriteClick = { },
+                        isSelected = currentPath == item.path
                     )
                 }
             }

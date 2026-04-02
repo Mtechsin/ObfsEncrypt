@@ -44,6 +44,9 @@ import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Verified
@@ -51,15 +54,12 @@ import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.InsertDriveFile
-import androidx.compose.material.icons.outlined.Lightbulb
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,11 +69,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,7 +99,6 @@ import com.obfs.encrypt.crypto.EncryptionMethod
 import com.obfs.encrypt.ui.components.FilePickerLauncher
 import com.obfs.encrypt.ui.components.PickType
 import com.obfs.encrypt.ui.theme.Motion
-import com.obfs.encrypt.ui.theme.pressClickEffect
 import com.obfs.encrypt.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 import androidx.compose.material.icons.filled.CloudSync
@@ -133,8 +131,6 @@ fun HomeScreen(
     onNavigateToHistory: () -> Unit,
     restoreTabIndex: Int? = null
 ) {
-    android.util.Log.d("HomeScreen", "HomeScreen COMPOSING")
-    
     val navItems = listOf(
         BottomNavItem(
             titleResId = R.string.encrypt,
@@ -152,8 +148,11 @@ fun HomeScreen(
     var previousTabIndex by remember { mutableIntStateOf(0) }
     var showWorkStatus by remember { mutableStateOf(false) }
 
-    val workInfos by viewModel.batchWorkInfo.collectAsState()
-    val hasActiveWork = workInfos.any { !it.state.isFinished }
+    val hasActiveWork by remember {
+        derivedStateOf {
+            viewModel.batchWorkInfo.value.any { !it.state.isFinished }
+        }
+    }
 
     LaunchedEffect(restoreTabIndex) {
         restoreTabIndex?.let { tabIndex ->
@@ -220,7 +219,7 @@ fun HomeScreen(
                         )
                     )
 
-                    enter togetherWith exit using SizeTransform(clip = false)
+                    enter togetherWith exit using SizeTransform(clip = true)
                 },
                 modifier = Modifier.fillMaxSize(),
                 label = "tab_transition"
@@ -248,12 +247,24 @@ fun HomeScreen(
     }
 
     if (showWorkStatus) {
-        WorkStatusSheet(
-            workInfos = workInfos,
-            onCancelWork = { viewModel.cancelWork(it) },
+        WorkStatusSheetWrapper(
+            viewModel = viewModel,
             onDismiss = { showWorkStatus = false }
         )
     }
+}
+
+@Composable
+private fun WorkStatusSheetWrapper(
+    viewModel: MainViewModel,
+    onDismiss: () -> Unit
+) {
+    val workInfos by viewModel.batchWorkInfo.collectAsState()
+    WorkStatusSheet(
+        workInfos = workInfos,
+        onCancelWork = { viewModel.cancelWork(it) },
+        onDismiss = onDismiss
+    )
 }
 
 @Composable
@@ -326,25 +337,6 @@ private fun AnimatedNavItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var bounceKey by remember { mutableIntStateOf(0) }
-    val scale by animateFloatAsState(
-        targetValue = if (bounceKey > 0) 0.82f else 1f,
-        animationSpec = Motion.NavIconBounceSpring,
-        label = "nav_icon_scale"
-    )
-    val rotation by animateFloatAsState(
-        targetValue = if (bounceKey > 0) 12f else 0f,
-        animationSpec = Motion.NavIconWiggleSpring,
-        label = "nav_icon_rotation"
-    )
-
-    LaunchedEffect(bounceKey) {
-        if (bounceKey > 0) {
-            delay(100)
-            bounceKey = 0
-        }
-    }
-
     val iconTint by animateColorAsState(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.primary
@@ -353,19 +345,6 @@ private fun AnimatedNavItem(
         },
         animationSpec = tween(300),
         label = "nav_icon_tint"
-    )
-    val labelAlpha by animateFloatAsState(
-        targetValue = if (isSelected) 1f else 0.6f,
-        animationSpec = tween(250),
-        label = "label_alpha"
-    )
-    val labelOffsetY by animateFloatAsState(
-        targetValue = if (isSelected) 0f else 3f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "label_offset"
     )
 
     val title = stringResource(item.titleResId)
@@ -376,7 +355,6 @@ private fun AnimatedNavItem(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {
-                bounceKey++
                 onClick()
             }
             .fillMaxSize(),
@@ -384,13 +362,7 @@ private fun AnimatedNavItem(
         verticalArrangement = Arrangement.Center
     ) {
         Box(
-            modifier = Modifier
-                .size(24.dp)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    rotationZ = rotation
-                },
+            modifier = Modifier.size(24.dp),
             contentAlignment = Alignment.Center
         ) {
             AnimatedContent(
@@ -421,12 +393,7 @@ private fun AnimatedNavItem(
             text = title,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            color = iconTint.copy(alpha = labelAlpha),
-            modifier = Modifier
-                .graphicsLayer {
-                    translationY = labelOffsetY
-                    alpha = labelAlpha
-                }
+            color = iconTint
         )
     }
 }
@@ -444,22 +411,96 @@ private fun EncryptTabContent(
     hasActiveWork: Boolean
 ) {
     var pickType by remember { mutableStateOf(PickType.NONE) }
+
+    EncryptionFlowHandler(
+        viewModel = viewModel,
+        pickType = pickType,
+        onPickTypeConsumed = { pickType = PickType.NONE },
+        onNavigateToProgress = onNavigateToProgress
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Spacer(modifier = Modifier.height(48.dp))
+
+        EncryptTabHeader(
+            hasActiveWork = hasActiveWork,
+            currentTabIndex = currentTabIndex,
+            onShowWorkStatus = onShowWorkStatus,
+            onNavigateToHistory = onNavigateToHistory,
+            onNavigateToSettings = onNavigateToSettings
+        )
+
+        Spacer(modifier = Modifier.height(40.dp))
+
+        MinimalActionButton(
+            icon = Icons.AutoMirrored.Outlined.InsertDriveFile,
+            title = stringResource(R.string.single_file),
+            subtitle = stringResource(R.string.encrypt_one_file),
+            onClick = { pickType = PickType.SINGLE }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        MinimalActionButton(
+            icon = Icons.Outlined.FolderZip,
+            title = stringResource(R.string.multiple_files),
+            subtitle = stringResource(R.string.batch_encrypt),
+            onClick = { pickType = PickType.MULTIPLE }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        MinimalActionButton(
+            icon = Icons.Outlined.CreateNewFolder,
+            title = stringResource(R.string.entire_folder),
+            subtitle = stringResource(R.string.encrypt_folder_recursive),
+            onClick = { pickType = PickType.FOLDER }
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        MinimalSecondaryAction(
+            icon = Icons.Filled.LockOpen,
+            title = stringResource(R.string.decrypt_files),
+            onClick = onNavigateToDecrypt
+        )
+
+        Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+private fun EncryptionFlowHandler(
+    viewModel: MainViewModel,
+    pickType: PickType,
+    onPickTypeConsumed: () -> Unit,
+    onNavigateToProgress: (String) -> Unit
+) {
     var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var showOutputDialog by remember { mutableStateOf(false) }
     var showMethodDialog by remember { mutableStateOf(false) }
     var selectedMethod by remember { mutableStateOf(EncryptionMethod.STANDARD) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var selectedOutputUri by remember { mutableStateOf<Uri?>(null) }
-    var dialogStep by remember { mutableIntStateOf(0) } // 0=none, 1=output, 2=method, 3=password
+    var dialogStep by remember { mutableIntStateOf(0) }
 
-    // Step 1: File selected, show output dialog
     LaunchedEffect(selectedUris) {
         if (selectedUris.isNotEmpty()) {
             dialogStep = 1
         }
     }
 
-    // Handle dialog sequencing
     LaunchedEffect(dialogStep) {
         when (dialogStep) {
             2 -> {
@@ -474,7 +515,7 @@ private fun EncryptTabContent(
     }
 
     FilePickerLauncher(pickType = pickType) { uris ->
-        pickType = PickType.NONE
+        onPickTypeConsumed()
         selectedUris = uris
         showOutputDialog = true
     }
@@ -490,7 +531,6 @@ private fun EncryptTabContent(
                 android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             selectedOutputUri = it
-            // Auto-advance after folder selection
             dialogStep = 2
             showOutputDialog = false
         }
@@ -523,7 +563,7 @@ private fun EncryptTabContent(
 
     if (showMethodDialog) {
         EncryptionMethodDialog(
-            onDismiss = { 
+            onDismiss = {
                 showMethodDialog = false
                 dialogStep = 1
                 showOutputDialog = true
@@ -563,7 +603,6 @@ private fun EncryptTabContent(
         )
     }
 
-    // Password save prompt after successful encryption
     val showPasswordSavePrompt by viewModel.showPasswordSavePrompt.collectAsState()
     if (showPasswordSavePrompt) {
         AlertDialog(
@@ -582,8 +621,7 @@ private fun EncryptTabContent(
             confirmButton = {
                 Button(
                     onClick = {
-                        val success = viewModel.confirmSavePassword()
-                        // Optionally show success/failure feedback
+                        viewModel.confirmSavePassword()
                     }
                 ) {
                     Text(stringResource(R.string.save_password))
@@ -596,85 +634,234 @@ private fun EncryptTabContent(
             }
         )
     }
+}
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+@Composable
+private fun EncryptTabHeader(
+    hasActiveWork: Boolean,
+    currentTabIndex: Int,
+    onShowWorkStatus: () -> Unit,
+    onNavigateToHistory: () -> Unit,
+    onNavigateToSettings: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column {
             Text(
-                text = "Privacy Vault",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+                text = "Encrypt",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
             )
-            Row {
-                Box {
-                    IconButton(
-                        onClick = onShowWorkStatus,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CloudSync,
-                            contentDescription = "Background Tasks",
-                            modifier = Modifier.size(28.dp),
-                            tint = if (hasActiveWork) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    if (hasActiveWork) {
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(top = 8.dp, end = 8.dp)
-                                .size(10.dp),
-                            shape = androidx.compose.foundation.shape.CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
-                            border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
-                        ) {}
-                    }
-                }
+        }
+        
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box {
                 IconButton(
-                    onClick = onNavigateToHistory,
+                    onClick = onShowWorkStatus,
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.History,
-                        contentDescription = stringResource(R.string.history),
-                        modifier = Modifier.size(28.dp)
+                        imageVector = Icons.Default.CloudSync,
+                        contentDescription = "Background Tasks",
+                        tint = if (hasActiveWork) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(
-                    onClick = { onNavigateToSettings(currentTabIndex) },
-                    modifier = Modifier.size(48.dp)
+                if (hasActiveWork) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 8.dp, end = 8.dp)
+                            .size(10.dp),
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
+                    ) {}
+                }
+            }
+            IconButton(
+                onClick = onNavigateToHistory,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.History,
+                    contentDescription = stringResource(R.string.history),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(
+                onClick = { onNavigateToSettings(currentTabIndex) },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = stringResource(R.string.settings),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MinimalActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() },
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = stringResource(R.string.settings),
-                        modifier = Modifier.size(28.dp)
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(20.dp)
+            )
         }
+    }
+}
 
+@Composable
+private fun MinimalSecondaryAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() },
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickActionsSection(
+    onSingleFile: () -> Unit,
+    onMultiFile: () -> Unit,
+    onFolder: () -> Unit
+) {
+    Column {
         SectionHeader(
             title = stringResource(R.string.quick_actions),
             subtitle = stringResource(R.string.select_files_subtitle)
         )
 
         ModernQuickActionGrid(
-            onSingleFile = { pickType = PickType.SINGLE },
-            onMultiFile = { pickType = PickType.MULTIPLE },
-            onFolder = { pickType = PickType.FOLDER }
+            onSingleFile = onSingleFile,
+            onMultiFile = onMultiFile,
+            onFolder = onFolder
         )
+    }
+}
 
+@Composable
+private fun DecryptSection(onNavigateToDecrypt: () -> Unit) {
+    Column {
         SectionHeader(
             title = stringResource(R.string.decrypt_files),
             subtitle = stringResource(R.string.select_files_to_decrypt)
@@ -682,9 +869,7 @@ private fun EncryptTabContent(
 
         ElevatedCard(
             onClick = onNavigateToDecrypt,
-            modifier = Modifier
-                .fillMaxWidth()
-                .pressClickEffect(),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
             colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer
@@ -724,15 +909,18 @@ private fun EncryptTabContent(
                 )
             }
         }
+    }
+}
 
+@Composable
+private fun SecurityTipsSection() {
+    Column {
         SectionHeader(
             title = stringResource(R.string.security_tips),
             subtitle = stringResource(R.string.security_tips_subtitle)
         )
 
         SecurityTipsCard()
-
-        Spacer(modifier = Modifier.height(100.dp))
     }
 }
 
@@ -742,8 +930,7 @@ internal fun ModernHeroHeader(encryptedCount: Int) {
 
     ElevatedCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .pressClickEffect(),
+            .fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -959,8 +1146,7 @@ private fun ModernQuickActionCard(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(140.dp)
-            .pressClickEffect(),
+            .height(140.dp),
         colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
             containerColor = containerColor
         ),
@@ -1022,8 +1208,7 @@ private fun ModernWideActionCard(
     ElevatedCard(
         onClick = onClick,
         modifier = Modifier
-            .fillMaxWidth()
-            .pressClickEffect(),
+            .fillMaxWidth(),
         colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
             containerColor = containerColor
         ),
@@ -1095,20 +1280,19 @@ internal fun ModernToolsSection(
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        ElevatedCard(
-            onClick = onDecryptClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .pressClickEffect(),
-            colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-            ),
-            shape = RoundedCornerShape(20.dp),
-            elevation = androidx.compose.material3.CardDefaults.elevatedCardElevation(
-                defaultElevation = 1.dp,
-                pressedElevation = 6.dp
-            )
-        ) {
+    ElevatedCard(
+        onClick = onDecryptClick,
+        modifier = Modifier
+            .fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ),
+        shape = RoundedCornerShape(20.dp),
+        elevation = androidx.compose.material3.CardDefaults.elevatedCardElevation(
+            defaultElevation = 1.dp,
+            pressedElevation = 6.dp
+        )
+    ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1165,8 +1349,7 @@ internal fun ModernToolsSection(
         ElevatedCard(
             onClick = onSettingsClick,
             modifier = Modifier
-                .fillMaxWidth()
-                .pressClickEffect(),
+                .fillMaxWidth(),
             colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow
             ),
@@ -1505,8 +1688,7 @@ private fun HeroHeader(encryptedCount: Int) {
 
     ElevatedCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .pressClickEffect(),
+            .fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -1722,8 +1904,7 @@ private fun QuickActionCard(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(140.dp)
-            .pressClickEffect(),
+            .height(140.dp),
         colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
             containerColor = containerColor
         ),
@@ -1785,8 +1966,7 @@ private fun WideActionCard(
     ElevatedCard(
         onClick = onClick,
         modifier = Modifier
-            .fillMaxWidth()
-            .pressClickEffect(),
+            .fillMaxWidth(),
         colors = androidx.compose.material3.CardDefaults.elevatedCardColors(
             containerColor = containerColor
         ),
@@ -1855,8 +2035,7 @@ private fun DecryptCard(onClick: () -> Unit) {
     androidx.compose.material3.Card(
         onClick = onClick,
         modifier = Modifier
-            .fillMaxWidth()
-            .pressClickEffect(),
+            .fillMaxWidth(),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
@@ -1914,8 +2093,7 @@ private fun SettingsCard(onClick: () -> Unit) {
     androidx.compose.material3.Card(
         onClick = onClick,
         modifier = Modifier
-            .fillMaxWidth()
-            .pressClickEffect(),
+            .fillMaxWidth(),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ),
@@ -1956,8 +2134,7 @@ private fun BrowseFilesCard(onClick: () -> Unit) {
     androidx.compose.material3.Card(
         onClick = onClick,
         modifier = Modifier
-            .fillMaxWidth()
-            .pressClickEffect(),
+            .fillMaxWidth(),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),

@@ -8,7 +8,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -80,11 +79,14 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.obfs.encrypt.R
 import com.obfs.encrypt.crypto.EncryptionMethod
+import com.obfs.encrypt.performance.CoilImageLoader
+import com.obfs.encrypt.performance.MemoryManager
 import com.obfs.encrypt.ui.components.FileFilter
 import com.obfs.encrypt.ui.components.FileFilterChips
 import com.obfs.encrypt.ui.components.FilePathBreadcrumb
 import com.obfs.encrypt.ui.components.FilePreviewSheet
 import com.obfs.encrypt.ui.components.FileSearchBar
+import com.obfs.encrypt.ui.components.SearchEmptyState
 import com.obfs.encrypt.ui.components.BatchOperationsMenu
 import com.obfs.encrypt.ui.components.FolderPickerDialog
 import com.obfs.encrypt.ui.components.DeleteConfirmationDialog
@@ -124,12 +126,9 @@ fun FileBrowserScreen(
     }
 
     var showSearch by remember { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedFilter by rememberSaveable { mutableStateOf(FileFilter.ALL) }
     val quickAccessExpanded by viewModel.quickAccessExpanded.collectAsState()
     val favoritePaths by fileManagerViewModel.favoritePaths.collectAsState()
-    var searchSubfolders by rememberSaveable { mutableStateOf(false) }
-    var searchResults by remember { mutableStateOf<List<FileItem>?>(null) }
     val scope = rememberCoroutineScope()
 
     val selectedItems by fileManagerViewModel.selectedItems.collectAsState()
@@ -138,6 +137,12 @@ fun FileBrowserScreen(
     val sortOrder by fileManagerViewModel.sortOrder.collectAsState()
     val sortAscending by fileManagerViewModel.sortAscending.collectAsState()
     val filesAndFolders by fileManagerViewModel.filesAndFolders.collectAsState()
+    
+    val searchQuery by fileManagerViewModel.searchQuery.collectAsState()
+    val searchResults by fileManagerViewModel.searchResults.collectAsState()
+    val isSearching by fileManagerViewModel.isSearching.collectAsState()
+    val searchResultCount by fileManagerViewModel.searchResultCount.collectAsState()
+    val searchSubfolders by fileManagerViewModel.searchSubfolders.collectAsState()
 
     // Track navigation direction for spatial hints
     var previousPath by remember { mutableStateOf(currentDirectory.absolutePath) }
@@ -151,10 +156,14 @@ fun FileBrowserScreen(
     // Handle system back button - navigate to previous folder instead of closing app
     BackHandler {
         haptic.click()
-        val canNavigateUp = fileManagerViewModel.navigateUp()
-        if (!canNavigateUp) {
-            // Already at root, go back to previous screen
-            onNavigateBack()
+        if (showSearch) {
+            showSearch = false
+            fileManagerViewModel.clearSearch()
+        } else {
+            val canNavigateUp = fileManagerViewModel.navigateUp()
+            if (!canNavigateUp) {
+                onNavigateBack()
+            }
         }
     }
 
@@ -247,16 +256,22 @@ fun FileBrowserScreen(
         }
     }
     
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            CoilImageLoader.clearMemoryCache()
+        }
+    }
+    
     if (!hasPermission) {
         FileBrowserPermissionRequest(onRequest = ::requestPermissions)
         return
     }
     
-    val filteredFiles = remember(filesAndFolders, searchQuery, selectedFilter) {
-        filesAndFolders.filter { item ->
-            val matchesFilter = shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
-            val matchesSearch = searchQuery.isEmpty() || item.name.contains(searchQuery, ignoreCase = true)
-            matchesFilter && matchesSearch
+    val filteredFiles by remember {
+        derivedStateOf {
+            filesAndFolders.filter { item ->
+                shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
+            }
         }
     }
     
@@ -301,7 +316,7 @@ fun FileBrowserScreen(
                                 onClick = {
                                     haptic.click()
                                     showSearch = false
-                                    searchQuery = ""
+                                    fileManagerViewModel.clearSearch()
                                 }
                             ) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
@@ -420,9 +435,7 @@ fun FileBrowserScreen(
                                     Button(
                                         onClick = {
                                             haptic.heavyClick()
-                                            val trigger = System.currentTimeMillis()
-                                            Log.d("FileBrowserScreen", "Button clicked! Generating new trigger: $trigger")
-                                            showOutputDialogTrigger = trigger
+                                            showOutputDialogTrigger = System.currentTimeMillis()
                                         },
                                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                                             containerColor = MaterialTheme.colorScheme.primary
@@ -454,32 +467,11 @@ fun FileBrowserScreen(
                 if (showSearch) {
                     FileSearchBar(
                         query = searchQuery,
-                        onQueryChange = { 
-                            searchQuery = it
-                            searchResults = null
-                        },
-                        onSearch = { 
-                            if (it.isNotBlank()) {
-                                fileManagerViewModel.searchFiles(
-                                    query = it,
-                                    searchSubfolders = searchSubfolders
-                                ) { results ->
-                                    searchResults = results
-                                }
-                            }
-                        },
+                        onQueryChange = { fileManagerViewModel.updateSearchQuery(it) },
+                        isSearching = isSearching,
+                        resultCount = searchResultCount,
                         searchSubfolders = searchSubfolders,
-                        onSearchSubfoldersChange = { 
-                            searchSubfolders = it
-                            if (searchQuery.isNotBlank()) {
-                                fileManagerViewModel.searchFiles(
-                                    query = searchQuery,
-                                    searchSubfolders = it
-                                ) { results ->
-                                    searchResults = results
-                                }
-                            }
-                        },
+                        onSearchSubfoldersChange = { fileManagerViewModel.toggleSearchSubfolders() },
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 } else {
@@ -497,6 +489,7 @@ fun FileBrowserScreen(
                                 onFavoriteClick = { path ->
                                     fileManagerViewModel.toggleFavorite(path)
                                 },
+                                currentPath = currentDirectory.absolutePath,
                                 isExpanded = quickAccessExpanded,
                                 onToggleExpand = { viewModel.setQuickAccessExpanded(!quickAccessExpanded) },
                                 modifier = Modifier.padding(vertical = 4.dp)
@@ -528,13 +521,13 @@ fun FileBrowserScreen(
                             (fadeIn(tween(duration, easing = easing)) + 
                              scaleIn(initialScale = 0.94f, animationSpec = tween(duration, easing = easing)))
                                 .togetherWith(fadeOut(tween(duration / 2, easing = easing)))
-                                .using(SizeTransform(clip = false))
+                                .using(SizeTransform(clip = true))
                         } else {
                             // Backward: fade the current container as it shrinks, and fadeIn the parent list
                             (fadeIn(tween(duration, easing = easing)))
                                 .togetherWith(fadeOut(tween(duration, easing = easing)) + 
                                             scaleOut(targetScale = 0.94f, animationSpec = tween(duration, easing = easing)))
-                                .using(SizeTransform(clip = false))
+                                .using(SizeTransform(clip = true))
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -570,11 +563,8 @@ fun FileBrowserScreen(
                         }
                         
                         // Path-aware file list for smooth transitions
-                        val currentPathState by fileManagerViewModel.currentDirectory.collectAsState()
-                        val filesAndFoldersState by fileManagerViewModel.filesAndFolders.collectAsState()
-                        
-                        val displayFiles = remember(targetPath, filesAndFoldersState, currentPathState, showSearch, searchResults, selectedFilter) {
-                            if (showSearch && searchResults != null) {
+                        val displayFiles = remember(targetPath, filesAndFolders, currentDirectory, showSearch, searchResults, selectedFilter) {
+                            if (showSearch && searchResults != null && targetPath == currentDirectory.absolutePath) {
                                 val results = searchResults!!
                                 if (selectedFilter != FileFilter.ALL) {
                                     results.filter { item ->
@@ -583,65 +573,83 @@ fun FileBrowserScreen(
                                 } else {
                                     results
                                 }
-                            } else if (currentPathState.absolutePath == targetPath) {
+                            } else if (currentDirectory.absolutePath == targetPath) {
                                 filteredFiles
                             } else {
-                                // During transition, if this is the "old" screen, use cached files
                                 val cached = fileManagerViewModel.getCachedFiles(targetPath) ?: emptyList()
                                 cached.filter { item ->
-                                    val matchesFilter = shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
-                                    val matchesSearch = searchQuery.isEmpty() || item.name.contains(searchQuery, ignoreCase = true)
-                                    matchesFilter && matchesSearch
+                                    shouldIncludeFile(item.name, item.isDirectory, selectedFilter)
                                 }
                             }
                         }
 
-                        OptimizedFileList(
-                            filesAndFolders = displayFiles,
-                            selectedItems = selectedItems,
-                            isLoading = isLoading,
-                            favoritePaths = favoritePaths,
-                            onFileClick = { item ->
-                                haptic.click()
-                                if (!item.isDirectory) {
-                                    // Click on name/row selects the file
-                                    fileManagerViewModel.toggleSelection(item.file)
-                                }
-                            },
-                            onFileLongClick = { item ->
-                                haptic.heavyClick()
-                                if (!item.isDirectory) {
-                                    fileManagerViewModel.toggleSelection(item.file)
-                                }
-                            },
-                            onFilePreview = { item ->
-                                // Click on image thumbnail opens preview
-                                haptic.click()
-                                previewFileItem = item
-                            },
-                            onFolderClick = { item, _ ->
-                                haptic.click()
-                                fileManagerViewModel.navigateTo(item.file)
-                            },
-                            onToggleSelect = { file ->
-                                haptic.click()
-                                fileManagerViewModel.toggleSelection(file)
-                            },
-                            onSelectAll = { fileManagerViewModel.selectAll() },
-                            onClearSelection = { fileManagerViewModel.clearSelection() },
-                            onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
-                            onToggleFavorite = { path ->
-                                fileManagerViewModel.toggleFavorite(path)
-                            },
-                            sharedTransitionScope = this@SharedTransitionLayout,
-                            animatedContentScope = this@AnimatedContent,
-                            modifier = Modifier.weight(1f),
-                            currentPath = targetPath,
-                            onSaveScrollPosition = { path, index, offset ->
-                                fileManagerViewModel.saveScrollPosition(path, index, offset)
-                            },
-                            initialScrollPosition = fileManagerViewModel.getScrollPosition(targetPath)
-                        )
+                        val showSearchEmpty = showSearch && searchQuery.isNotBlank() && searchResults != null && displayFiles.isEmpty()
+
+                        if (showSearchEmpty) {
+                            SearchEmptyState(
+                                isSearching = isSearching,
+                                query = searchQuery
+                            )
+                        } else {
+                            OptimizedFileList(
+                                filesAndFolders = displayFiles,
+                                selectedItems = selectedItems,
+                                isLoading = isLoading && !showSearch,
+                                favoritePaths = favoritePaths,
+                                onFileClick = { item ->
+                                    haptic.click()
+                                    if (!item.isDirectory) {
+                                        if (showSearch) {
+                                            fileManagerViewModel.navigateTo(item.file.parentFile ?: item.file)
+                                            showSearch = false
+                                            fileManagerViewModel.clearSearch()
+                                        } else {
+                                            fileManagerViewModel.toggleSelection(item.file)
+                                        }
+                                    }
+                                },
+                                onFileLongClick = { item ->
+                                    haptic.heavyClick()
+                                    if (!item.isDirectory) {
+                                        fileManagerViewModel.toggleSelection(item.file)
+                                    }
+                                },
+                                onFilePreview = { item ->
+                                    // Click on image thumbnail opens preview
+                                    haptic.click()
+                                    previewFileItem = item
+                                },
+                                onFolderClick = { item, _ ->
+                                    haptic.click()
+                                    if (showSearch) {
+                                        fileManagerViewModel.navigateTo(item.file)
+                                        showSearch = false
+                                        fileManagerViewModel.clearSearch()
+                                    } else {
+                                        fileManagerViewModel.navigateTo(item.file)
+                                    }
+                                },
+                                onToggleSelect = { file ->
+                                    haptic.click()
+                                    fileManagerViewModel.toggleSelection(file)
+                                },
+                                onSelectAll = { fileManagerViewModel.selectAll() },
+                                onClearSelection = { fileManagerViewModel.clearSelection() },
+                                onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
+                                onToggleFavorite = { path ->
+                                    fileManagerViewModel.toggleFavorite(path)
+                                },
+                                sharedTransitionScope = this@SharedTransitionLayout,
+                                animatedContentScope = this@AnimatedContent,
+                                modifier = Modifier.weight(1f),
+                                currentPath = targetPath,
+                                onSaveScrollPosition = { path, index, offset ->
+                                    fileManagerViewModel.saveScrollPosition(path, index, offset)
+                                },
+                                initialScrollPosition = fileManagerViewModel.getScrollPosition(targetPath),
+                                searchQuery = if (showSearch) searchQuery else ""
+                            )
+                        }
                     }
                 }
             }
@@ -729,8 +737,7 @@ fun FileBrowserScreen(
 
     // Batch operation result snackbar
     LaunchedEffect(batchOperationResult) {
-        batchOperationResult?.let { result ->
-            Log.d("FileBrowserScreen", "Batch operation result: ${result.message}")
+        batchOperationResult?.let {
             fileManagerViewModel.clearBatchOperationResult()
         }
     }

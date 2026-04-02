@@ -95,6 +95,7 @@ fun HistoryScreen(
     val isSelectionMode by viewModel.isSelectionMode.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val showClearConfirmDialog by viewModel.showClearConfirmDialog.collectAsState()
+    val groupedHistory by viewModel.groupedHistory.collectAsState()
 
     var showFilterDropdown by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
@@ -320,13 +321,12 @@ fun HistoryScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    val groupedHistory = viewModel.getGroupedHistory()
                     groupedHistory.forEach { (section, items) ->
-                        item {
+                        item(key = "header_$section") {
                             SectionHeader(title = section)
                             Spacer(modifier = Modifier.height(8.dp))
                         }
-                        items(items) { historyItem ->
+                        items(items, key = { it.id }) { historyItem ->
                             HistoryItemCard(
                                 item = historyItem,
                                 isSelected = selectedItems.contains(historyItem.id),

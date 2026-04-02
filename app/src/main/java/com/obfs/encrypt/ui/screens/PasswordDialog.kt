@@ -51,7 +51,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.obfs.encrypt.R
 import com.obfs.encrypt.ui.components.PasswordStrengthMeter
-import com.obfs.encrypt.ui.theme.pressClickEffect
 import com.obfs.encrypt.viewmodel.MainViewModel
 
 @Composable
@@ -169,7 +168,7 @@ fun PasswordDialog(
                         onConfirm(password.toCharArray(), deleteOriginal)
                     }
                 },
-                modifier = Modifier.pressClickEffect(),
+                modifier = Modifier,
                 shape = RoundedCornerShape(12.dp),
                 enabled = password.isNotEmpty()
             ) {

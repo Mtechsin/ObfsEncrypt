@@ -12,8 +12,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -52,6 +55,10 @@ class HistoryViewModel @Inject constructor(
 
     private val _showClearConfirmDialog = MutableStateFlow(false)
     val showClearConfirmDialog: StateFlow<Boolean> = _showClearConfirmDialog.asStateFlow()
+
+    val groupedHistory: StateFlow<Map<String, List<EncryptionHistoryItem>>> =
+        _filteredItems.map { items -> computeGroupedHistory(items) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     init {
         viewModelScope.launch {
@@ -195,14 +202,14 @@ class HistoryViewModel @Inject constructor(
     }
 
     /**
-     * Get history grouped by date for display.
+     * Compute history grouped by date for display.
      */
-    fun getGroupedHistory(): Map<String, List<EncryptionHistoryItem>> {
+    private fun computeGroupedHistory(items: List<EncryptionHistoryItem>): Map<String, List<EncryptionHistoryItem>> {
         val now = System.currentTimeMillis()
         val oneDayMs = 24 * 60 * 60 * 1000L
         val oneWeekMs = 7 * oneDayMs
 
-        return _filteredItems.value.groupBy { item ->
+        return items.groupBy { item ->
             val age = now - item.timestamp
             when {
                 age < oneDayMs -> "Today"

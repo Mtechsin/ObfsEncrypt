@@ -67,7 +67,8 @@
     <string name="theme_green">Green</string>
     <string name="theme_orange">Orange</string>
     <string name="theme_navy">Navy</string>
-    <string name="theme_amoled">AMOLED</string>
+    <string name="theme_amoled">Pure Black</string>
+    <string name="amoled_mode_subtitle">Pure black backgrounds for OLED screens</string>
     <string name="theme_lemon">Lemon</string>
     <string name="theme_default">Default</string>
     <string name="biometric_authentication">Biometric Authentication</string>

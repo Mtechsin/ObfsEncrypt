@@ -32,6 +32,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import android.content.BroadcastReceiver
@@ -90,6 +91,9 @@ class MainViewModel @Inject constructor(
 
     private val _dynamicColor = MutableStateFlow(false)
     val dynamicColor: StateFlow<Boolean> = _dynamicColor.asStateFlow()
+
+    private val _amoledMode = MutableStateFlow(false)
+    val amoledMode: StateFlow<Boolean> = _amoledMode.asStateFlow()
 
     private val _quickAccessExpanded = MutableStateFlow(true)
     val quickAccessExpanded: StateFlow<Boolean> = _quickAccessExpanded.asStateFlow()
@@ -155,67 +159,55 @@ class MainViewModel @Inject constructor(
             application.registerReceiver(serviceReceiver, filter)
         }
         
+        // Theme flows
         viewModelScope.launch {
-            settingsRepository.secureDeleteOriginals.collect { enabled ->
-                _secureDeleteOriginals.value = enabled
-            }
+            combine(
+                settingsRepository.themeMode,
+                settingsRepository.appTheme,
+                settingsRepository.dynamicColor,
+                settingsRepository.amoledMode
+            ) { themeMode, appTheme, dynamicColor, amoledMode ->
+                _themeMode.value = themeMode
+                _appTheme.value = appTheme
+                _dynamicColor.value = dynamicColor
+                _amoledMode.value = amoledMode
+            }.collect {}
         }
+        // Security flows
         viewModelScope.launch {
-            settingsRepository.outputDirectoryUri.collect { uriString ->
+            combine(
+                settingsRepository.appLockEnabled,
+                settingsRepository.appLockTimeout,
+                settingsRepository.secureDeleteOriginals
+            ) { lockEnabled, lockTimeout, secureDelete ->
+                _appLockEnabled.value = lockEnabled
+                _appLockTimeout.value = lockTimeout
+                _secureDeleteOriginals.value = secureDelete
+            }.collect {}
+        }
+        // UI & locale flows
+        viewModelScope.launch {
+            combine(
+                settingsRepository.outputDirectoryUri,
+                settingsRepository.quickAccessExpanded,
+                settingsRepository.language,
+                settingsRepository.onboardingCompleted
+            ) { uriString, quickExpanded, language, onboardingDone ->
                 _currentOutputUri.value = uriString?.let { Uri.parse(it) }
-            }
+                _quickAccessExpanded.value = quickExpanded
+                _language.value = language
+                _onboardingCompleted.value = onboardingDone
+            }.collect {}
         }
+        // History & WorkManager flows
         viewModelScope.launch {
-            settingsRepository.themeMode.collect { mode ->
-                _themeMode.value = mode
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.appTheme.collect { theme ->
-                _appTheme.value = theme
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.dynamicColor.collect { enabled ->
-                _dynamicColor.value = enabled
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.quickAccessExpanded.collect { expanded ->
-                _quickAccessExpanded.value = expanded
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.appLockEnabled.collect { enabled ->
-                _appLockEnabled.value = enabled
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.appLockTimeout.collect { timeout ->
-                _appLockTimeout.value = timeout
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.language.collect { lang ->
-                _language.value = lang
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.onboardingCompleted.collect { completed ->
-                _onboardingCompleted.value = completed
-            }
-        }
-        viewModelScope.launch {
-            historyRepository.historyItems.collect { items ->
-                _encryptionHistory.value = items
-            }
-        }
-
-        // Collect WorkManager batch info
-        viewModelScope.launch {
-            workManager.getWorkInfosByTagFlow("batch_operation").collect { workInfos ->
+            combine(
+                historyRepository.historyItems,
+                workManager.getWorkInfosByTagFlow("batch_operation")
+            ) { historyItems, workInfos ->
+                _encryptionHistory.value = historyItems
                 _batchWorkInfo.value = workInfos
-            }
+            }.collect {}
         }
     }
 
@@ -259,6 +251,11 @@ class MainViewModel @Inject constructor(
     fun setDynamicColor(enabled: Boolean) {
         _dynamicColor.value = enabled
         viewModelScope.launch { settingsRepository.setDynamicColor(enabled) }
+    }
+
+    fun setAmoledMode(enabled: Boolean) {
+        _amoledMode.value = enabled
+        viewModelScope.launch { settingsRepository.setAmoledMode(enabled) }
     }
 
     fun setQuickAccessExpanded(expanded: Boolean) {

@@ -168,11 +168,13 @@ class MainActivity : AppCompatActivity() {
             val themeMode by mainViewModel.themeMode.collectAsState()
             val appTheme by mainViewModel.appTheme.collectAsState()
             val dynamicColor by mainViewModel.dynamicColor.collectAsState()
+            val amoledMode by mainViewModel.amoledMode.collectAsState()
 
             ObfsEncryptTheme(
                 themeMode = themeMode,
                 appTheme = appTheme,
-                dynamicColor = dynamicColor
+                dynamicColor = dynamicColor,
+                amoledMode = amoledMode
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

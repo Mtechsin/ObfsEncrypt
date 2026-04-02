@@ -63,7 +63,6 @@ fun AppNavigation(
     navController: NavHostController = rememberNavController(),
     mainViewModel: MainViewModel? = null
 ) {
-    android.util.Log.d("AppNavigation", "AppNavigation COMPOSING")
     val vm = mainViewModel ?: hiltViewModel()
     
     NavHost(

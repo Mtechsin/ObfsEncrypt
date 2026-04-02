@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "ObfsEncrypt"
 include(":app")
-// include(":benchmarks") // Commented out - uncomment when ready to generate baseline profiles
+include(":benchmarks")

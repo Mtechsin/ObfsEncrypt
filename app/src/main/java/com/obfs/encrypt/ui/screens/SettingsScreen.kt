@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -126,14 +127,24 @@ fun SettingsScreen(
     val currentAppTheme by viewModel.appTheme.collectAsState()
     val dynamicColor by viewModel.dynamicColor.collectAsState()
     val appLockEnabled by viewModel.appLockEnabled.collectAsState()
+    val amoledMode by viewModel.amoledMode.collectAsState()
     val appLockTimeout by viewModel.appLockTimeout.collectAsState()
     val currentLanguage by viewModel.language.collectAsState()
-    var outputDirName by remember { mutableStateOf(context.getString(R.string.not_set_source)) }
-    var hasStoragePermission by remember { mutableStateOf(PermissionHelper.hasStoragePermission(context)) }
-
+    // Consolidated UI state
+    data class SettingsUiState(
+        var outputDirName: String = context.getString(R.string.not_set_source),
+        var hasStoragePermission: Boolean = PermissionHelper.hasStoragePermission(context)
+    )
+    var uiState by remember { mutableStateOf(SettingsUiState()) }
+    
+    // Derived state for app directory
     val appDirectoryManager = remember { AppDirectoryManagerInstanceHolder.manager }
-    val appFolderPath = remember { appDirectoryManager?.getOutputDirectoryPath() ?: context.getString(R.string.not_available) }
-    val hasWriteAccess = remember { appDirectoryManager?.hasWriteAccess() ?: false }
+    val appFolderPath = remember(appDirectoryManager) { 
+        appDirectoryManager?.getOutputDirectoryPath() ?: context.getString(R.string.not_available) 
+    }
+    val hasWriteAccess = remember(appDirectoryManager) { 
+        appDirectoryManager?.hasWriteAccess() ?: false 
+    }
 
     // App lock timeout selection dialog
     var showTimeoutDialog by remember { mutableStateOf(false) }
@@ -158,13 +169,13 @@ fun SettingsScreen(
                 android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            outputDirName = it.lastPathSegment ?: context.getString(R.string.selected_folder)
+            uiState = uiState.copy(outputDirName = it.lastPathSegment ?: context.getString(R.string.selected_folder))
         }
     }
 
     val clearOutputDir = {
         viewModel.setCurrentOutputDirectory(null)
-        outputDirName = context.getString(R.string.not_set_source)
+        uiState = uiState.copy(outputDirName = context.getString(R.string.not_set_source))
     }
 
     val requestStoragePermission = {
@@ -232,9 +243,11 @@ fun SettingsScreen(
                 currentMode = currentThemeMode,
                 currentAppTheme = currentAppTheme,
                 dynamicColor = dynamicColor,
+                amoledMode = amoledMode,
                 onModeSelected = { viewModel.setThemeMode(it) },
                 onAppThemeSelected = { viewModel.setAppTheme(it) },
-                onDynamicColorChanged = { viewModel.setDynamicColor(it) }
+                onDynamicColorChanged = { viewModel.setDynamicColor(it) },
+                onAmoledModeChanged = { viewModel.setAmoledMode(it) }
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -296,7 +309,7 @@ fun SettingsScreen(
                     Icon(
                         imageVector = Icons.Default.Storage,
                         contentDescription = null,
-                        tint = if (hasStoragePermission) {
+                        tint = if (uiState.hasStoragePermission) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.error
@@ -311,7 +324,7 @@ fun SettingsScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = if (hasStoragePermission) {
+                            text = if (uiState.hasStoragePermission) {
                                 stringResource(R.string.granted_access)
                             } else {
                                 stringResource(R.string.required_access)
@@ -325,7 +338,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (!hasStoragePermission) {
+            if (!uiState.hasStoragePermission) {
                 Button(
                     onClick = requestStoragePermission,
                     modifier = Modifier.fillMaxWidth(),
@@ -495,7 +508,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = outputDirName,
+                        text = uiState.outputDirName,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 8.dp)
@@ -508,7 +521,7 @@ fun SettingsScreen(
                             OutlinedButton(
                                 onClick = { folderPickerLauncher.launch(null) },
                                 modifier = Modifier.weight(1f),
-                                enabled = hasStoragePermission,
+                                enabled = uiState.hasStoragePermission,
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(containerColor = amoledOutlinedButtonContainerColor(), contentColor = amoledOutlinedButtonContentColor())
                             ) {
@@ -519,7 +532,7 @@ fun SettingsScreen(
                             OutlinedButton(
                                 onClick = { folderPickerLauncher.launch(null) },
                                 modifier = Modifier.weight(1f),
-                                enabled = hasStoragePermission,
+                                enabled = uiState.hasStoragePermission,
                                 shape = RoundedCornerShape(10.dp)
                             ) {
                                 Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
@@ -668,9 +681,11 @@ private fun ThemeSelectorCard(
     currentMode: ThemeMode,
     currentAppTheme: AppTheme,
     dynamicColor: Boolean,
+    amoledMode: Boolean,
     onModeSelected: (ThemeMode) -> Unit,
     onAppThemeSelected: (AppTheme) -> Unit,
-    onDynamicColorChanged: (Boolean) -> Unit
+    onDynamicColorChanged: (Boolean) -> Unit,
+    onAmoledModeChanged: (Boolean) -> Unit
 ) {
     // Modern card with gradient border effect
     Surface(
@@ -732,29 +747,26 @@ private fun ThemeSelectorCard(
                 onEnabledChanged = onDynamicColorChanged
             )
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // AMOLED Mode toggle — works with ALL themes including Material You
+            AmoledModeToggle(
+                enabled = amoledMode,
+                onEnabledChanged = onAmoledModeChanged
+            )
+
             // Animated container for Theme Color Picker
             AnimatedVisibility(
                 visible = !dynamicColor,
-                enter = fadeIn(animationSpec = tween(300)) +
-                        slideInVertically(
-                            animationSpec = tween(300),
-                            initialOffsetY = { -20 }
-                        ) +
-                        expandVertically(
-                            animationSpec = tween(300),
-                            expandFrom = Alignment.Top
-                        ),
-                exit = fadeOut(animationSpec = tween(200)) +
-                        slideOutVertically(
-                            animationSpec = tween(200),
-                            targetOffsetY = { -20 }
-                        ) +
-                        shrinkVertically(
-                            animationSpec = tween(200),
-                            shrinkTowards = Alignment.Top
-                        )
+                enter = fadeIn(animationSpec = tween(250)) + expandVertically(animationSpec = tween(250)),
+                exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200))
             ) {
-                Column {
+                Column(
+                    modifier = Modifier.graphicsLayer {
+                        // Enable GPU acceleration for smoother animations
+                        clip = true
+                    }
+                ) {
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Section divider with label
@@ -906,7 +918,7 @@ private fun DynamicColorToggle(
         } else {
             MaterialTheme.colorScheme.surfaceVariant
         },
-        animationSpec = tween(300),
+        animationSpec = tween(200),
         label = "iconBackground"
     )
 
@@ -917,12 +929,12 @@ private fun DynamicColorToggle(
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
-        animationSpec = tween(300),
+        animationSpec = tween(200),
         label = "iconTint"
     )
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().graphicsLayer { clip = true },
         shape = RoundedCornerShape(20.dp),
         shadowElevation = if (enabled) 8.dp else 2.dp,
         border = if (enabled) {
@@ -1012,13 +1024,138 @@ private fun ModernToggleSwitch(
 }
 
 @Composable
+private fun AmoledModeToggle(
+    enabled: Boolean,
+    onEnabledChanged: (Boolean) -> Unit
+) {
+    // Animate background gradient
+    val backgroundGradient = if (enabled) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                Color(0xFF1A1A2E).copy(alpha = 0.6f),
+                Color(0xFF0F0F1A).copy(alpha = 0.4f)
+            )
+        )
+    } else {
+        Brush.horizontalGradient(
+            colors = listOf(
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.4f)
+            )
+        )
+    }
+
+    // Animate icon background
+    val iconBackground by animateColorAsState(
+        targetValue = if (enabled) {
+            Color(0xFF000000)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        animationSpec = tween(200),
+        label = "amoledIconBackground"
+    )
+
+    // Animate icon tint
+    val iconTint by animateColorAsState(
+        targetValue = if (enabled) {
+            Color(0xFFE0E0E0)
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(200),
+        label = "amoledIconTint"
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().graphicsLayer { clip = true },
+        shape = RoundedCornerShape(20.dp),
+        shadowElevation = if (enabled) 8.dp else 2.dp,
+        border = if (enabled) {
+            BorderStroke(2.dp, Color(0xFF333333))
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(backgroundGradient)
+                .padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Pure black circle icon
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(iconBackground)
+                            .then(
+                                if (enabled) Modifier.border(2.dp, Color(0xFF444444), CircleShape)
+                                else Modifier
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DarkMode,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column {
+                        Text(
+                            text = stringResource(R.string.theme_amoled),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (enabled) {
+                                Color(0xFFE0E0E0)
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                        Text(
+                            text = stringResource(R.string.amoled_mode_subtitle),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (enabled) {
+                                Color(0xFFAAAAAA)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+
+                // Modern Toggle Switch
+                ModernToggleSwitch(
+                    enabled = enabled,
+                    onEnabledChanged = onEnabledChanged
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ThemeColorPicker(
     selectedTheme: AppTheme,
     onThemeSelected: (AppTheme) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // First row - 3 colors
         Row(
@@ -1051,10 +1188,10 @@ private fun ThemeColorPicker(
             )
         }
         
-        // Second row - 3 colors
+        // Second row - 2 colors centered
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
         ) {
             // Orange
             ThemeColorOption(
@@ -1072,15 +1209,8 @@ private fun ThemeColorPicker(
                 onClick = { onThemeSelected(AppTheme.NAVY) },
                 modifier = Modifier.weight(1f)
             )
-            // AMOLED (Muted purple with dark background)
-            ThemeColorOption(
-                color = Color(0xFF9575CD),
-                label = stringResource(R.string.theme_amoled),
-                isSelected = selectedTheme == AppTheme.AMOLED,
-                onClick = { onThemeSelected(AppTheme.AMOLED) },
-                modifier = Modifier.weight(1f),
-                isAMOLED = true
-            )
+            // Empty spacer to balance the grid with the top row
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }
@@ -1124,35 +1254,27 @@ private fun ThemeColorOption(
     label: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    isAMOLED: Boolean = false
+    modifier: Modifier = Modifier
 ) {
     // Animate size change
     val circleSize by animateDpAsState(
         targetValue = if (isSelected) 50.dp else 48.dp,
-        animationSpec = tween(200),
+        animationSpec = tween(150),
         label = "circleSize"
     )
     
     // Animate border width
     val borderWidth by animateDpAsState(
         targetValue = if (isSelected) 3.dp else 1.dp,
-        animationSpec = tween(200),
+        animationSpec = tween(150),
         label = "borderWidth"
     )
     
     // Animate shadow elevation
     val elevation by animateDpAsState(
         targetValue = if (isSelected) 4.dp else 2.dp,
-        animationSpec = tween(200),
+        animationSpec = tween(150),
         label = "elevation"
-    )
-    
-    // Animate selection ring alpha
-    val ringAlpha by animateFloatAsState(
-        targetValue = if (isSelected) 1f else 0f,
-        animationSpec = tween(200),
-        label = "ringAlpha"
     )
     
     // Animate label color
@@ -1162,7 +1284,7 @@ private fun ThemeColorOption(
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
-        animationSpec = tween(200),
+        animationSpec = tween(150),
         label = "labelColor"
     )
 
@@ -1174,7 +1296,11 @@ private fun ThemeColorOption(
     ) {
         Box(
             modifier = Modifier
-                .size(56.dp),
+                .size(56.dp)
+                .graphicsLayer {
+                    // Enable GPU acceleration for smoother animations
+                    clip = true
+                },
             contentAlignment = Alignment.Center
         ) {
             // Selection ring with fade animation
@@ -1190,7 +1316,7 @@ private fun ThemeColorOption(
             Surface(
                 modifier = Modifier.size(circleSize),
                 shape = CircleShape,
-                color = if (isAMOLED) Color.Black else color,
+                color = color,
                 border = BorderStroke(
                     borderWidth,
                     if (isSelected) color else MaterialTheme.colorScheme.outlineVariant
@@ -1239,7 +1365,7 @@ private fun ThemeModeChip(
         } else {
             MaterialTheme.colorScheme.surfaceContainerHighest
         },
-        animationSpec = tween(200),
+        animationSpec = tween(150),
         label = "chipBackground"
     )
 
@@ -1249,7 +1375,7 @@ private fun ThemeModeChip(
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
-        animationSpec = tween(200),
+        animationSpec = tween(150),
         label = "chipContent"
     )
 
@@ -1257,7 +1383,11 @@ private fun ThemeModeChip(
         modifier = modifier
             .height(72.dp)
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .graphicsLayer {
+                // Enable GPU acceleration for smoother animations
+                clip = true
+            },
         shape = RoundedCornerShape(16.dp),
         color = backgroundColor,
         shadowElevation = if (isSelected) 4.dp else 0.dp

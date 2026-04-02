@@ -4,10 +4,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
@@ -31,15 +27,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -50,20 +42,19 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.obfs.encrypt.ui.theme.pressClickEffect
+import com.obfs.encrypt.ui.components.SearchHighlightText
 import com.obfs.encrypt.viewmodel.FileItem
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.abs
-import kotlin.math.min
 
 // Threshold in pixels before refresh triggers
 private const val REFRESH_TRIGGER_PX = 200f
@@ -83,65 +74,72 @@ private class PullToRefreshNestedScroll(
 ) : NestedScrollConnection {
 
     private var resetJob: kotlinx.coroutines.Job? = null
+    // Pre-allocated Zero offset to avoid allocations on every frame
+    private val zeroOffset = Offset.Zero
+    private val zeroVelocity = Velocity.Zero
 
-    // Rubberband factor — drag feels progressively harder the further you pull
-    private fun rubberbandFactor(offset: Float): Float {
-        val ratio = offset / MAX_DRAG_PX
-        return 0.55f * (1f - ratio * 0.7f).coerceAtLeast(0.15f)
-    }
+    // Cached spring spec to avoid recreation per fling
+    private val resetSpring = spring<Float>(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessMediumLow
+    )
 
     override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        if (source != NestedScrollSource.UserInput) return zeroOffset
+
         // Cancel any ongoing reset animation when user starts scrolling
-        if (source == NestedScrollSource.UserInput && available.y != 0f) {
+        if (available.y != 0f) {
             resetJob?.cancel()
         }
-        
+
         // Consume upward scroll to collapse the indicator
-        if (source == NestedScrollSource.UserInput && dragOffset.value > 0f && available.y < 0f) {
-            val consumed = available.y.coerceAtLeast(-dragOffset.value)
-            dragOffset.value = (dragOffset.value + consumed).coerceAtLeast(0f)
-            if (dragOffset.value == 0f) isTriggered.value = false
+        val currentDrag = dragOffset.value
+        if (currentDrag > 0f && available.y < 0f) {
+            val consumed = available.y.coerceAtLeast(-currentDrag)
+            val newDrag = (currentDrag + consumed).coerceAtLeast(0f)
+            dragOffset.value = newDrag
+            if (newDrag == 0f) isTriggered.value = false
             return Offset(0f, consumed)
         }
-        return Offset.Zero
+        return zeroOffset
     }
 
     override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-        // Expand indicator on downward overscroll from top
-        if (source == NestedScrollSource.UserInput && available.y > 0f && !isRefreshing()) {
-            val delta = available.y * rubberbandFactor(dragOffset.value)
-            dragOffset.value = (dragOffset.value + delta).coerceAtMost(MAX_DRAG_PX)
-            if (dragOffset.value >= REFRESH_TRIGGER_PX && !isTriggered.value) {
-                isTriggered.value = true
-            }
-            return Offset(0f, available.y)
+        if (source != NestedScrollSource.UserInput || available.y <= 0f || isRefreshing()) return zeroOffset
+
+        val currentDrag = dragOffset.value
+        val ratio = currentDrag / MAX_DRAG_PX
+        val factor = 0.55f * (1f - ratio * 0.7f).coerceAtLeast(0.15f)
+        val delta = available.y * factor
+        val newDrag = (currentDrag + delta).coerceAtMost(MAX_DRAG_PX)
+        dragOffset.value = newDrag
+        if (newDrag >= REFRESH_TRIGGER_PX && !isTriggered.value) {
+            isTriggered.value = true
         }
-        return Offset.Zero
+        return Offset(0f, available.y)
     }
 
     override suspend fun onPreFling(available: Velocity): Velocity {
         if (isTriggered.value && !isRefreshing()) {
             onRefresh()
         }
-        
+
         // Always animate back to zero when user releases finger
-        resetJob = coroutineScope.launch {
-            if (dragOffset.value > 0f) {
+        val currentDrag = dragOffset.value
+        if (currentDrag > 0f) {
+            resetJob = coroutineScope.launch {
                 animate(
-                    initialValue = dragOffset.value,
+                    initialValue = currentDrag,
                     targetValue = 0f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMediumLow
-                    )
+                    animationSpec = resetSpring
                 ) { value, _ ->
                     dragOffset.value = value
                 }
                 isTriggered.value = false
             }
         }
-        
-        return Velocity.Zero
+
+        return zeroVelocity
     }
 }
 
@@ -270,7 +268,8 @@ fun OptimizedFileList(
     modifier: Modifier = Modifier,
     currentPath: String? = null,
     onSaveScrollPosition: ((String, Int, Int) -> Unit)? = null,
-    initialScrollPosition: Pair<Int, Int>? = null
+    initialScrollPosition: Pair<Int, Int>? = null,
+    searchQuery: String = ""
 ) {
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = initialScrollPosition?.first ?: 0,
@@ -292,12 +291,21 @@ fun OptimizedFileList(
         previousDirectoryHash = currentHash
     }
 
-    // Save scroll position whenever it changes
-    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+    // Save scroll position with snapshotFlow + debounce for efficient change detection
+    LaunchedEffect(currentPath) {
         if (currentPath != null && onSaveScrollPosition != null) {
-            onSaveScrollPosition(currentPath, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+            @OptIn(kotlinx.coroutines.FlowPreview::class)
+            snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+                .debounce(200)
+                .collect { (index, offset) ->
+                    onSaveScrollPosition(currentPath, index, offset)
+                }
         }
     }
+
+    // Derived scroll state for efficient recomposition of scroll-dependent UI
+    val isScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
+    val isAtTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 } }
 
     // Pull-to-refresh state
     val dragOffset = remember { mutableStateOf(0f) }
@@ -387,13 +395,23 @@ fun OptimizedFileList(
             ) {
                 items(
                     items = filesAndFolders,
-                    key = { it.file.absolutePath }
+                    key = { it.file.absolutePath },
+                    contentType = { item ->
+                        if (item.isDirectory) "folder"
+                        else when (item.name.substringAfterLast('.', "").lowercase()) {
+                            "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "heic", "raw" -> "image"
+                            "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v" -> "video"
+                            "mp3", "wav", "flac", "aac", "ogg", "wma", "m4a" -> "audio"
+                            else -> "file"
+                        }
+                    }
                 ) { item ->
                     val isSelected = selectedItems.contains(item.file)
                     val isFavorite = item.file.absolutePath in favoritePaths
                     DisposableKeyedFileItem(
                         item = item,
                         isSelected = isSelected,
+                        hasSelection = hasSelection,
                         hasAnySelection = hasSelection,
                         isFavorite = isFavorite,
                         onClick = { onFileClick(item) },
@@ -403,18 +421,22 @@ fun OptimizedFileList(
                         onThumbnailClick = { onFilePreview(item) },
                         onFolderClick = onFolderClick,
                         sharedTransitionScope = sharedTransitionScope,
-                        animatedContentScope = animatedContentScope
+                        animatedContentScope = animatedContentScope,
+                        listState = listState,
+                        searchQuery = searchQuery
                     )
                 }
             }
         }
 
-        // Overlay refresh indicator — browser style
-        BrowserRefreshIndicator(
-            dragOffset = dragOffset.value,
-            isTriggered = isTriggered.value,
-            isRefreshing = isLoading
-        )
+        // Overlay refresh indicator — browser style (conditionally composed)
+        if (dragOffset.value > 0f || isLoading) {
+            BrowserRefreshIndicator(
+                dragOffset = dragOffset.value,
+                isTriggered = isTriggered.value,
+                isRefreshing = isLoading
+            )
+        }
     }
 }
 
@@ -429,6 +451,7 @@ fun OptimizedFileList(
 private fun DisposableKeyedFileItem(
     item: FileItem,
     isSelected: Boolean,
+    hasSelection: Boolean,
     hasAnySelection: Boolean,
     isFavorite: Boolean,
     onClick: () -> Unit,
@@ -438,7 +461,9 @@ private fun DisposableKeyedFileItem(
     onThumbnailClick: () -> Unit,
     onFolderClick: ((FileItem, Rect?) -> Unit)? = null,
     sharedTransitionScope: androidx.compose.animation.SharedTransitionScope? = null,
-    animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null
+    animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null,
+    listState: LazyListState,
+    searchQuery: String = ""
 ) {
     val coroutineScope = rememberCoroutineScope()
     // Use remember to cache expensive computations
@@ -458,6 +483,7 @@ private fun DisposableKeyedFileItem(
     OptimizedFileItemRow(
         item = item,
         isSelected = isSelected,
+        hasSelection = hasSelection,
         hasAnySelection = hasAnySelection,
         isFavorite = isFavorite,
         dateString = dateString,
@@ -470,7 +496,9 @@ private fun DisposableKeyedFileItem(
         onThumbnailClick = onThumbnailClick,
         onFolderClick = onFolderClick,
         sharedTransitionScope = sharedTransitionScope,
-        animatedContentScope = animatedContentScope
+        animatedContentScope = animatedContentScope,
+        listState = listState,
+        searchQuery = searchQuery
     )
 }
 
@@ -482,6 +510,7 @@ private fun DisposableKeyedFileItem(
 private fun OptimizedFileItemRow(
     item: FileItem,
     isSelected: Boolean,
+    hasSelection: Boolean,
     hasAnySelection: Boolean,
     isFavorite: Boolean,
     dateString: String,
@@ -494,7 +523,9 @@ private fun OptimizedFileItemRow(
     onThumbnailClick: () -> Unit,
     onFolderClick: ((FileItem, Rect?) -> Unit)? = null,
     sharedTransitionScope: androidx.compose.animation.SharedTransitionScope? = null,
-    animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null
+    animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null,
+    listState: LazyListState,
+    searchQuery: String = ""
 ) {
     val isImage = fileType == FileType.IMAGE
     val fileColor = getColorForFileType(fileType)
@@ -578,7 +609,8 @@ private fun OptimizedFileItemRow(
                 ) {
                     OptimizedImageThumbnail(
                         file = item.file,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        listState = listState
                     )
                 }
             } else {
@@ -609,20 +641,28 @@ private fun OptimizedFileItemRow(
 
             // File info column
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else if (item.isDirectory) FontWeight.Medium else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    // Performance: Disable text layout animations
-                    lineHeight = 20.sp
-                )
+                if (searchQuery.isNotBlank()) {
+                    SearchHighlightText(
+                        text = item.name,
+                        query = searchQuery,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else if (item.isDirectory) FontWeight.Medium else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        lineHeight = 20.sp
+                    )
+                }
                 
                 Spacer(modifier = Modifier.height(4.dp))
                 
@@ -664,15 +704,14 @@ private fun OptimizedFileItemRow(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Favorite star icon - visible when not in selection mode or for folders
-            AnimatedVisibility(
-                visible = !hasAnySelection && item.isDirectory,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
+            // Favorite star icon - skip animation during scroll for performance
+            val starVisible = !hasAnySelection && item.isDirectory
+
+            if (starVisible) {
                 IconButton(
                     onClick = onToggleFavorite,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                        .size(32.dp)
                 ) {
                     Icon(
                         imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -689,12 +728,8 @@ private fun OptimizedFileItemRow(
 
             Spacer(modifier = Modifier.width(4.dp))
 
-            // Checkbox - only visible when any items are selected globally
-            AnimatedVisibility(
-                visible = hasAnySelection,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
+            // Checkbox - skip animation during scroll for performance
+            if (hasAnySelection) {
                 Checkbox(
                     checked = isSelected,
                     onCheckedChange = { onToggleSelect() },
@@ -714,8 +749,11 @@ private fun OptimizedFileItemRow(
 @Composable
 private fun OptimizedImageThumbnail(
     file: File,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    listState: LazyListState
 ) {
+    val isScrolling by remember { derivedStateOf { listState.isScrollInProgress } }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
@@ -725,8 +763,10 @@ private fun OptimizedImageThumbnail(
         AsyncImage(
             model = coil.request.ImageRequest.Builder(LocalContext.current)
                 .data(file)
-                .crossfade(true)
-                .size(96) // Limit cache size for thumbnails
+                .crossfade(if (isScrolling) 0 else 300)
+                .size(64)
+                .memoryCacheKey(file.absolutePath)
+                .diskCacheKey(file.absolutePath)
                 .build(),
             contentDescription = file.name,
             modifier = Modifier.fillMaxSize(),

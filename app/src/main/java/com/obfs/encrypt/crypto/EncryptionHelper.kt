@@ -77,9 +77,7 @@ import kotlin.coroutines.coroutineContext
  *   chunk_nonce = base_nonce XOR little-endian(chunk_index as 8 bytes padded to 12)
  *   This is safe because each (key, nonce) pair is unique per chunk.
  */
-class EncryptionHelper {
-
-    private val argon2Kt = Argon2Kt()
+class EncryptionHelper(private val argon2Kt: Argon2Kt = Argon2Kt()) {
 
     companion object {
         const val MAGIC_HEADER = "OBFSv4"  // Updated to v4 with header HMAC

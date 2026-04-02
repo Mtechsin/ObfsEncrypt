@@ -2,6 +2,7 @@
 *.apk
 *.ap_
 *.aab
+*.aar
 
 # Files for the ART/Dalvik VM
 *.dex
@@ -37,8 +38,7 @@ captures/
 
 # IntelliJ
 *.iml
-.idea/
-!.idea/
+.idea/*
 !.idea/codeStyles/
 !.idea/inspectionProfiles/
 !.idea/runConfigurations/
@@ -80,11 +80,8 @@ fastlane/readme.md
 # Version control
 vcs.xml
 
-# lint
-lint/intermediates/
-lint/generated/
-lint/outputs/
-lint/tmp/
+# Lint
+lint-results*
 
 # Kotlin
 .kotlin/
@@ -99,23 +96,10 @@ ehthumbs.db
 Thumbs.db
 nul
 
-# Build and log files (project root)
-build.log
-build2.log
-build3.log
-build_errors.txt
-build_out.txt
-build_out2.txt
-build_output.txt
-build_output2.txt
-crash.log
-filtered.txt
-full_log.txt
-log.txt
-log_clean.txt
-log_debug.txt
-log_dummy.txt
-output.txt
+# Native libraries and memory dumps
+*.so
+*.hprof
+*.ap_prof
 
 # Backup files
 *.bak

@@ -14,12 +14,22 @@ import com.obfs.encrypt.data.SettingsRepository
 import com.obfs.encrypt.performance.TraceSection
 import com.obfs.encrypt.performance.TraceSections
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -102,6 +112,26 @@ class FileManagerViewModel @Inject constructor(
     private val _batchOperationResult = MutableStateFlow<BatchOperationResult?>(null)
     val batchOperationResult: StateFlow<BatchOperationResult?> = _batchOperationResult.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<FileItem>?>(null)
+    val searchResults: StateFlow<List<FileItem>?> = _searchResults.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    val searchResultCount: StateFlow<Int> = _searchResults.map { it?.size ?: 0 }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, 0)
+
+    private val _searchSubfolders = MutableStateFlow(false)
+    val searchSubfolders: StateFlow<Boolean> = _searchSubfolders.asStateFlow()
+
+    private val searchCache = mutableMapOf<String, List<FileItem>>()
+    private val maxSearchCacheSize = 20
+
+    private var searchJob: Job? = null
+
     // Performance: Cache for directory listings to avoid redundant disk reads
     private val directoryCache = mutableMapOf<String, List<FileItem>>()
     private val maxCacheSize = 50 // Limit cache to prevent memory issues
@@ -133,6 +163,86 @@ class FileManagerViewModel @Inject constructor(
             }
         }
         loadDirectory(rootDirectory)
+        setupSearchFlow()
+    }
+
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
+    private fun setupSearchFlow() {
+        viewModelScope.launch {
+            combine(_searchQuery, _searchSubfolders) { query, subfolders -> query to subfolders }
+                .debounce(300)
+                .distinctUntilChanged()
+                .flatMapLatest { (query, subfolders) ->
+                    if (query.isBlank()) {
+                        flowOf(emptyList())
+                    } else {
+                        flowOf(performSearch(query, subfolders))
+                    }
+                }
+                .collect { results ->
+                    _searchResults.value = results
+                    _isSearching.value = false
+                }
+        }
+    }
+
+    private suspend fun performSearch(query: String, searchSubfolders: Boolean): List<FileItem> {
+        val cacheKey = "${_currentDirectory.value.absolutePath}|$query|$searchSubfolders"
+        searchCache[cacheKey]?.let { return it }
+
+        return withContext(Dispatchers.IO) {
+            val results = mutableListOf<FileItem>()
+            if (searchSubfolders) {
+                searchRecursive(_currentDirectory.value, query, results)
+            } else {
+                _currentDirectory.value.listFiles()?.forEach { file ->
+                    if (file.name.contains(query, ignoreCase = true)) {
+                        val isDir = file.isDirectory
+                        results.add(
+                            FileItem(
+                                file = file,
+                                isDirectory = isDir,
+                                name = file.name,
+                                size = if (isDir) 0L else file.length(),
+                                lastModified = file.lastModified()
+                            )
+                        )
+                    }
+                }
+            }
+            val sorted = results.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+            if (searchCache.size >= maxSearchCacheSize) {
+                searchCache.remove(searchCache.keys.first())
+            }
+            searchCache[cacheKey] = sorted
+            sorted
+        }
+    }
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+        if (query.isBlank()) {
+            _searchResults.value = null
+            _isSearching.value = false
+        } else {
+            _isSearching.value = true
+        }
+    }
+
+    fun toggleSearchSubfolders() {
+        _searchSubfolders.value = !_searchSubfolders.value
+        if (_searchQuery.value.isNotBlank()) {
+            _isSearching.value = true
+        }
+    }
+
+    fun clearSearch() {
+        searchJob?.cancel()
+        _searchQuery.value = ""
+        _searchResults.value = null
+        _isSearching.value = false
+        _searchSubfolders.value = false
+        searchCache.clear()
     }
 
     fun saveScrollPosition(path: String, index: Int, offset: Int) {
@@ -407,52 +517,18 @@ class FileManagerViewModel @Inject constructor(
     /**
      * Search files recursively in the current directory and subdirectories.
      */
-    fun searchFiles(
-        query: String,
-        searchSubfolders: Boolean = false,
-        onComplete: (List<FileItem>) -> Unit
-    ) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            val results = withContext(Dispatchers.IO) {
-                val results = mutableListOf<FileItem>()
-                if (searchSubfolders) {
-                    searchRecursive(_currentDirectory.value, query, results)
-                } else {
-                    _currentDirectory.value.listFiles()?.forEach { file ->
-                        if (file.name.contains(query, ignoreCase = true)) {
-                            results.add(
-                                FileItem(
-                                    file = file,
-                                    isDirectory = file.isDirectory,
-                                    name = file.name,
-                                    size = file.length(),
-                                    lastModified = file.lastModified()
-                                )
-                            )
-                        }
-                    }
-                }
-                // Sort results: folders first, then alphabetically
-                results.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
-            }
-            _batchOperationResult.value = null
-            _isLoading.value = false
-            onComplete(results)
-        }
-    }
-
     private fun searchRecursive(directory: File, query: String, results: MutableList<FileItem>) {
         try {
             val files = directory.listFiles() ?: return
             files.forEach { file ->
                 if (file.name.contains(query, ignoreCase = true)) {
+                    val isDir = file.isDirectory
                     results.add(
                         FileItem(
                             file = file,
-                            isDirectory = file.isDirectory,
+                            isDirectory = isDir,
                             name = file.name,
-                            size = file.length(),
+                            size = if (isDir) 0L else file.length(),
                             lastModified = file.lastModified()
                         )
                     )
@@ -478,10 +554,11 @@ class FileManagerViewModel @Inject constructor(
      * Load directory with caching and debouncing for performance.
      */
     private fun loadDirectory(directory: File, forceRefresh: Boolean = false) {
-        // Cancel previous load job to prevent redundant operations
         loadJob?.cancel()
         
         loadJob = viewModelScope.launch {
+            delay(100)
+            
             TraceSection.begin(TraceSections.FILE_LOAD)
             _isLoading.value = true
             _error.value = null
@@ -514,11 +591,12 @@ class FileManagerViewModel @Inject constructor(
                     try {
                         val listFiles = directory.listFiles() ?: emptyArray()
                         val mappedItems = listFiles.map { file ->
+                            val isDir = file.isDirectory
                             FileItem(
                                 file = file,
-                                isDirectory = file.isDirectory,
+                                isDirectory = isDir,
                                 name = file.name,
-                                size = file.length(),
+                                size = if (isDir) 0L else file.length(),
                                 lastModified = file.lastModified()
                             )
                         }

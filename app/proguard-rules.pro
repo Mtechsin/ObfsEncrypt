@@ -39,6 +39,16 @@
 -dontwarn dagger.hilt.internal.componenttree.**
 -dontwarn dagger.hilt.internal.processgeneratedroots.**
 
+# Keep Hilt generated classes
+-keep class dagger.hilt.android.internal.managers.** { *; }
+-keep class dagger.hilt.internal.** { *; }
+-keep class com.obfs.encrypt.Hilt_* { *; }
+-keep class com.obfs.encrypt.**_Factory { *; }
+-keep class com.obfs.encrypt.**_Factory$* { *; }
+-keep class com.obfs.encrypt.**_ProvideFactory { *; }
+-keep class com.obfs.encrypt.**_ProvideFactory$* { *; }
+-keep class * extends dagger.hilt.android.internal.lifecycle.DefaultViewModelFactories { *; }
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Kotlin Coroutines
 # ──────────────────────────────────────────────────────────────────────────────
@@ -70,6 +80,17 @@
     <init>(...);
 }
 -dontwarn androidx.compose.**
+
+# Keep all Composable functions and their parameters
+-keepclassmembers class * {
+    *** composable(...);
+}
+-keep class androidx.compose.runtime.** { *; }
+-keep class androidx.compose.ui.** { *; }
+-keep class androidx.compose.material3.** { *; }
+-keep class androidx.compose.material.** { *; }
+-keep class androidx.compose.foundation.** { *; }
+-keep class androidx.compose.animation.** { *; }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Argon2Kt - Password hashing library
@@ -103,12 +124,32 @@
 -keep class androidx.documentfile.** { *; }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Keep encryption helper and related classes
+# Keep encryption helper and related classes - REFINED FOR BETTER OBFUSCATION
 # ──────────────────────────────────────────────────────────────────────────────
--keep class com.obfs.encrypt.crypto.** { *; }
--keep class com.obfs.encrypt.data.** { *; }
--keep class com.obfs.encrypt.viewmodel.** { *; }
--keep class com.obfs.encrypt.services.** { *; }
+# Keep only classes that need to be preserved from removal (can still be obfuscated)
+# Crypto classes that are referenced via reflection or need specific method signatures
+-keepclassmembers class com.obfs.encrypt.crypto.EncryptionHelper {
+    *;
+}
+-keepclassmembers class com.obfs.encrypt.crypto.EncryptionMethod {
+    *;
+}
+-keepclassmembers class com.obfs.encrypt.crypto.ParallelEncryptionHelper {
+    *;
+}
+# Data classes that might be accessed via reflection
+-keepclassmembers class com.obfs.encrypt.data.** {
+    *;
+}
+# ViewModel classes accessed via Hilt - keep the classes but allow obfuscation
+-keep class * extends com.obfs.encrypt.viewmodel.MainViewModel { *; }
+-keep class * extends com.obfs.encrypt.viewmodel.FileManagerViewModel { *; }
+-keep class * extends com.obfs.encrypt.viewmodel.HistoryViewModel { *; }
+# Service classes accessed via Hilt - keep the classes but allow obfuscation
+-keep class * extends com.obfs.encrypt.services.EncryptionWorker { *; }
+-keep class * extends com.obfs.encrypt.services.CryptoService { *; }
+# Keep model classes (already present)
+-keep class com.obfs.encrypt.model.** { *; }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Keep generic signatures for reflection (if needed)
@@ -122,3 +163,50 @@
 # Prevent obfuscation of model classes used with serialization/parceling
 # ──────────────────────────────────────────────────────────────────────────────
 -keep class com.obfs.encrypt.model.** { *; }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Keep all application classes that might be accessed via reflection
+# ──────────────────────────────────────────────────────────────────────────────
+-keep class com.obfs.encrypt.ObfsApp { *; }
+-keep class com.obfs.encrypt.MainActivity { *; }
+-keep class com.obfs.encrypt.ui.** { *; }
+-keep class com.obfs.encrypt.viewmodel.** { *; }
+-keep class com.obfs.encrypt.services.** { *; }
+-keep class com.obfs.encrypt.data.** { *; }
+-keep class com.obfs.encrypt.navigation.** { *; }
+-keep class com.obfs.encrypt.theme.** { *; }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Biometric
+# ──────────────────────────────────────────────────────────────────────────────
+-keep class androidx.biometric.** { *; }
+-dontwarn androidx.biometric.**
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WorkManager
+# ──────────────────────────────────────────────────────────────────────────────
+-keep class androidx.work.** { *; }
+-dontwarn androidx.work.**
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Gson
+# ──────────────────────────────────────────────────────────────────────────────
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class sun.misc.Unsafe { *; }
+-keep class com.google.gson.** { *; }
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Security Crypto
+# ──────────────────────────────────────────────────────────────────────────────
+-keep class androidx.security.** { *; }
+-dontwarn androidx.security.**
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Lifecycle
+# ──────────────────────────────────────────────────────────────────────────────
+-keep class androidx.lifecycle.** { *; }
+-dontwarn androidx.lifecycle.**

@@ -23,6 +23,15 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../obfesc-release-key.jks")
+            storePassword = "obfesc123"
+            keyAlias = "obfesc-key"
+            keyPassword = "obfesc123"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -34,6 +43,7 @@ android {
             // Enable R8 full mode for better optimization
             isDebuggable = false
             isProfileable = true
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             // Enable R8 in debug for faster iteration
@@ -52,6 +62,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {
@@ -68,11 +79,15 @@ android {
             useLegacyPackaging = false
         }
     }
+    
 }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.02.00")
     implementation(composeBom)
+    
+    // Baseline profile support
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     // Performance-optimized Compose components
@@ -136,7 +151,4 @@ dependencies {
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.59.2")
     kspAndroidTest("com.google.dagger:hilt-compiler:2.59.2")
     androidTestImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
-    
-    // Baseline profiles for faster startup (optional, can be generated later)
-    // baselineProfile(project(":benchmarks"))
 }

@@ -33,6 +33,7 @@ class SettingsRepository @Inject constructor(
         val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         val APP_THEME_KEY = stringPreferencesKey("app_theme")
         val DYNAMIC_COLOR_KEY = booleanPreferencesKey("dynamic_color")
+        val AMOLED_MODE_KEY = booleanPreferencesKey("amoled_mode")
         val QUICK_ACCESS_EXPANDED_KEY = booleanPreferencesKey("quick_access_expanded")
         val APP_LOCK_ENABLED_KEY = booleanPreferencesKey("app_lock_enabled")
         val APP_LOCK_TIMEOUT_KEY = longPreferencesKey("app_lock_timeout")
@@ -91,9 +92,20 @@ class SettingsRepository @Inject constructor(
             "GREEN" -> AppTheme.GREEN
             "ORANGE" -> AppTheme.ORANGE
             "NAVY" -> AppTheme.NAVY
-            "AMOLED" -> AppTheme.AMOLED
+            "AMOLED" -> AppTheme.DEFAULT  // Backward compat: AMOLED is now a toggle, not a theme
             else -> AppTheme.DEFAULT
         }
+    }
+
+    /**
+     * Flow of AMOLED mode setting.
+     * When enabled + dark mode, backgrounds become pure black for OLED power savings.
+     * Default: false (or true if user had AMOLED theme selected before migration)
+     */
+    val amoledMode: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        // If user explicitly set amoled_mode, use that
+        // Otherwise, check if they had the old AMOLED theme selected (migration)
+        preferences[AMOLED_MODE_KEY] ?: (preferences[APP_THEME_KEY] == "AMOLED")
     }
 
     /**
@@ -225,6 +237,15 @@ class SettingsRepository @Inject constructor(
     suspend fun setDynamicColor(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR_KEY] = enabled
+        }
+    }
+
+    /**
+     * Update AMOLED mode setting.
+     */
+    suspend fun setAmoledMode(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[AMOLED_MODE_KEY] = enabled
         }
     }
 

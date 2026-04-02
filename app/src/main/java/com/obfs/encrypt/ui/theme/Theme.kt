@@ -3,6 +3,7 @@ package com.obfs.encrypt.ui.theme
 import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -189,39 +190,6 @@ private val DarkNavyColorScheme = darkColorScheme(
     onSurfaceVariant = Color(0xFFC5D0E0)
 )
 
-// Dark Theme - AMOLED (Pure Black for OLED screens)
-// 70-20-10 Ratio: 70% pure black, 20% subtle dark grays, 10% muted neon accents
-// Button styling: Stroke-only with transparent fill for power savings
-private val DarkAMOLEDColorScheme = darkColorScheme(
-    // 10% Accent - Primary highlight color (Muted Purple-Blue - less vibrant for eye comfort)
-    primary = Color(0xFF9575CD),
-    primaryContainer = Color(0xFF2D1F5C),
-    onPrimary = Color(0xFF1A0F35),
-
-    // 20% Secondary - Supporting color (Soft Teal - muted for less eye strain)
-    secondary = Color(0xFF4DB6AC),
-    secondaryContainer = Color(0xFF003D36),
-    onSecondary = Color(0xFF001A17),
-
-    // Tertiary for additional accents (Soft Rose - muted for night comfort)
-    tertiary = Color(0xFFF06292),
-    tertiaryContainer = Color(0xFF5D1F3A),
-    onTertiary = Color(0xFF2D0F1C),
-
-    // 70% Dominant - Pure black for OLED power savings
-    background = Color(0xFF000000),
-    surface = Color(0xFF000000),
-    surfaceVariant = Color(0xFF0A0A0A),
-    surfaceContainerLow = Color(0xFF050505),
-    surfaceContainer = Color(0xFF080808),
-    surfaceContainerHigh = Color(0xFF0D0D0D),
-
-    // Text colors (high contrast for readability on pure black)
-    onBackground = Color(0xFFE8E8E8),
-    onSurface = Color(0xFFE8E8E8),
-    onSurfaceVariant = Color(0xFFB0B0B0)
-)
-
 // ============================================================================
 // LIGHT THEMES
 // ============================================================================
@@ -354,50 +322,56 @@ private val LightGreenColorScheme = lightColorScheme(
     onSurfaceVariant = Color(0xFF425242)
 )
 
-// Light Theme - AMOLED (Clean white with muted accents)
-// 70-20-10 Ratio: 70% pure white, 20% soft pastel, 10% muted colors
-private val LightAMOLEDColorScheme = lightColorScheme(
-    // 10% Accent - Primary highlight color (Muted Purple)
-    primary = Color(0xFF7E57C2),
-    primaryContainer = Color(0xFFEDE7F6),
-    onPrimary = Color(0xFF1F0A4D),
-
-    // 20% Secondary - Supporting color (Soft Cyan - muted)
-    secondary = Color(0xFF26A69A),
-    secondaryContainer = Color(0xFFE0F2F1),
-    onSecondary = Color(0xFF00332E),
-
-    // Tertiary for additional accents (Soft Pink - muted)
-    tertiary = Color(0xFFEC407A),
-    tertiaryContainer = Color(0xFFFCE4EC),
-    onTertiary = Color(0xFF4A0A24),
-
-    // 70% Dominant - Pure white backgrounds
-    background = Color(0xFFFFFFFF),
-    surface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFFF5F5F5),
-    surfaceContainerLow = Color(0xFFFAFAFA),
-    surfaceContainer = Color(0xFFF8F8F8),
-    surfaceContainerHigh = Color(0xFFEEEEEE),
-
-    // Text colors (high contrast for readability - WCAG AA compliant)
-    onBackground = Color(0xFF1A1A1A),
-    onSurface = Color(0xFF1A1A1A),
-    onSurfaceVariant = Color(0xFF5C5C5C)
-)
-
 // ============================================================================
-// AMOLED BUTTON STYLES
-// Stroke-only buttons with transparent fill for AMOLED theme
+// AMOLED MODE - Pure black surface/background overlay
+// Applied on top of any dark theme (including Material You) when enabled
+// Keeps accent colors from the selected theme, replaces surfaces with pure black
 // ============================================================================
 
 /**
- * Returns true if the current app theme is AMOLED.
- * Use this to apply custom button styling for AMOLED theme.
+ * Apply AMOLED (pure black) overrides to any dark ColorScheme.
+ * Keeps the accent colors (primary, secondary, tertiary, error) intact
+ * while replacing all surface/background colors with pure black variants.
+ */
+private fun ColorScheme.withAmoledOverrides(): ColorScheme {
+    return this.copy(
+        // Pure black backgrounds for maximum OLED power savings
+        background = Color(0xFF000000),
+        surface = Color(0xFF000000),
+        surfaceVariant = Color(0xFF0C0C0C),
+        surfaceContainerLowest = Color(0xFF000000),
+        surfaceContainerLow = Color(0xFF060606),
+        surfaceContainer = Color(0xFF0A0A0A),
+        surfaceContainerHigh = Color(0xFF101010),
+        surfaceContainerHighest = Color(0xFF161616),
+
+        // Slightly brighter text for better contrast on pure black
+        onBackground = Color(0xFFF0F0F0),
+        onSurface = Color(0xFFF0F0F0),
+        onSurfaceVariant = Color(0xFFB8B8B8),
+
+        // Subtle outline for definition on pure black
+        outline = Color(0xFF3A3A3A),
+        outlineVariant = Color(0xFF252525),
+
+        // Crisp inverse for snackbars/tooltips
+        inverseSurface = Color(0xFFE8E8E8),
+        inverseOnSurface = Color(0xFF1A1A1A)
+    )
+}
+
+// ============================================================================
+// AMOLED BUTTON STYLES
+// Stroke-only buttons with transparent fill for AMOLED mode
+// ============================================================================
+
+/**
+ * Returns true if AMOLED mode is currently active (enabled + dark theme).
+ * Use this to apply custom button styling for AMOLED mode.
  */
 @Composable
 fun isAMOLEDTheme(): Boolean {
-    return LocalAppTheme.current == AppTheme.AMOLED && isSystemInDarkTheme()
+    return LocalAmoledMode.current
 }
 
 /**
@@ -441,13 +415,13 @@ enum class AppTheme {
     RED,
     GREEN,
     ORANGE,
-    NAVY,
-    AMOLED        // Pure black (dark) / Clean white (light) with neon accents
+    NAVY
 }
 
 val LocalThemeMode = compositionLocalOf { ThemeMode.SYSTEM }
 val LocalDynamicColor = compositionLocalOf { false }
 val LocalAppTheme = compositionLocalOf { AppTheme.DEFAULT }
+val LocalAmoledMode = compositionLocalOf { false }
 
 // ============================================================================
 // THEME COMPOSABLE
@@ -459,6 +433,7 @@ fun ObfsEncryptTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     appTheme: AppTheme = AppTheme.DEFAULT,
     dynamicColor: Boolean = false,
+    amoledMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -470,9 +445,7 @@ fun ObfsEncryptTheme(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
 
-    android.util.Log.d("Theme", "ObfsEncryptTheme COMPOSING - dark: $isDarkTheme, appTheme: $appTheme, dynamic: $dynamicColor")
-    
-    val colorScheme = when {
+    val baseColorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (isDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
@@ -481,16 +454,21 @@ fun ObfsEncryptTheme(
             AppTheme.GREEN -> DarkGreenColorScheme
             AppTheme.ORANGE -> DarkOrangeColorScheme
             AppTheme.NAVY -> DarkNavyColorScheme
-            AppTheme.AMOLED -> DarkAMOLEDColorScheme
             AppTheme.DEFAULT -> DarkBlueColorScheme
         }
         else -> when (appTheme) {
             AppTheme.RED -> LightRedColorScheme
             AppTheme.GREEN -> LightGreenColorScheme
             AppTheme.ORANGE -> LightOrangeColorScheme
-            AppTheme.AMOLED -> LightAMOLEDColorScheme
             AppTheme.DEFAULT, AppTheme.NAVY -> LightLemonColorScheme
         }
+    }
+
+    // Apply AMOLED overrides when enabled + dark mode
+    val colorScheme = if (amoledMode && isDarkTheme) {
+        baseColorScheme.withAmoledOverrides()
+    } else {
+        baseColorScheme
     }
 
     // Apply theme to system bars
@@ -505,8 +483,14 @@ fun ObfsEncryptTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        content = content
-    )
+    val isAmoledActive = amoledMode && isDarkTheme
+
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalAmoledMode provides isAmoledActive
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            content = content
+        )
+    }
 }

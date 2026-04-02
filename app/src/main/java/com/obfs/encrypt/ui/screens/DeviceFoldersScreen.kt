@@ -59,7 +59,6 @@ import com.obfs.encrypt.crypto.EncryptionMethod
 import com.obfs.encrypt.ui.components.optimized.EmptyDirectoryContent
 import com.obfs.encrypt.ui.components.optimized.OptimizedFileList
 import com.obfs.encrypt.ui.theme.Motion
-import com.obfs.encrypt.ui.theme.pressClickEffect
 import com.obfs.encrypt.viewmodel.FileItem
 import com.obfs.encrypt.viewmodel.FileManagerViewModel
 import com.obfs.encrypt.viewmodel.MainViewModel
@@ -380,7 +379,6 @@ fun DeviceFoldersScreen(
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = MaterialTheme.colorScheme.primary
                                     ),
-                                    modifier = Modifier.pressClickEffect(),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Icon(

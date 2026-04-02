@@ -37,7 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.obfs.encrypt.R
-import com.obfs.encrypt.ui.theme.pressClickEffect
+
 
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Sync
@@ -123,7 +123,6 @@ fun PermissionDialog(
                 onClick = onGrantPermission,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pressClickEffect()
             ) {
                 Icon(
                     imageVector = Icons.Default.Folder,
@@ -139,8 +138,7 @@ fun PermissionDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .pressClickEffect(),
+                            .fillMaxWidth(),
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = amoledOutlinedButtonContainerColor(),
                             contentColor = amoledOutlinedButtonContentColor()
@@ -153,7 +151,6 @@ fun PermissionDialog(
                         onClick = onDismiss,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .pressClickEffect()
                     ) {
                         Text(stringResource(R.string.later))
                     }
@@ -262,7 +259,6 @@ fun PermissionGrantedDialog(
                 onClick = onContinue,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pressClickEffect()
             ) {
                 Text(stringResource(R.string.continue_btn), fontWeight = FontWeight.Bold)
             }

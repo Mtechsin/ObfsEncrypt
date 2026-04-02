@@ -54,7 +54,6 @@ import com.obfs.encrypt.security.BiometricResult
 import com.obfs.encrypt.ui.components.ActionCard
 import com.obfs.encrypt.ui.components.FilePickerLauncher
 import com.obfs.encrypt.ui.components.PickType
-import com.obfs.encrypt.ui.theme.pressClickEffect
 import com.obfs.encrypt.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 
@@ -343,8 +342,8 @@ fun DecryptScreen(
                      subtitle = stringResource(R.string.select_obfs_files_subtitle),
                      icon = Icons.Default.FileOpen,
                      onClick = { pickType = PickType.MULTIPLE },
-                     modifier = Modifier.pressClickEffect()
-                 )
+                     modifier = Modifier
+                  )
              }
         }
     }

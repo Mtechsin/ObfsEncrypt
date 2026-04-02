@@ -67,7 +67,8 @@
     <string name="theme_green">أخضر</string>
     <string name="theme_orange">برتقالي</string>
     <string name="theme_navy">كحلي</string>
-    <string name="theme_amoled">أموليد</string>
+    <string name="theme_amoled">أسود نقي</string>
+    <string name="amoled_mode_subtitle">خلفيات سوداء نقية لشاشات OLED</string>
     <string name="theme_lemon">ليموني</string>
     <string name="theme_default">افتراضي</string>
     <string name="biometric_authentication">المصادقة الحيوية</string>
