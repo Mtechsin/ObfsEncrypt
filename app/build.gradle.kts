@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -5,6 +7,14 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt.android)
 }
+
+val versionProps = Properties().apply {
+    val f = rootProject.file("version.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+    else { setProperty("VERSION_NAME", "1.0.0"); setProperty("VERSION_CODE", "1") }
+}
+val verName = versionProps.getProperty("VERSION_NAME", "1.0.0")
+val verCode = versionProps.getProperty("VERSION_CODE", "1").toInt()
 
 android {
     namespace = "com.obfs.encrypt"
@@ -14,8 +24,8 @@ android {
         applicationId = "com.obfs.encrypt"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = verCode
+        versionName = verName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

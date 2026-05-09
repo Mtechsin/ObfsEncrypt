@@ -278,6 +278,9 @@ fun OptimizedFileList(
     val coroutineScope = rememberCoroutineScope()
     val hasSelection = selectedItems.isNotEmpty()
     val context = LocalContext.current
+    val selectableFileCount by remember(filesAndFolders) {
+        derivedStateOf { filesAndFolders.count { !it.isDirectory } }
+    }
 
     // Auto-scroll to top when directory changes - only if we don't have an initial position
     var previousDirectoryHash by remember { mutableStateOf(0) }
@@ -393,6 +396,17 @@ fun OptimizedFileList(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
+                if (selectableFileCount > 0) {
+                    item(key = "selection_actions", contentType = "selection_actions") {
+                        FolderSelectionActions(
+                            fileCount = selectableFileCount,
+                            hasSelection = hasSelection,
+                            onSelectAll = onSelectAll,
+                            onClearSelection = onClearSelection
+                        )
+                    }
+                }
+
                 items(
                     items = filesAndFolders,
                     key = { it.file.absolutePath },
@@ -440,7 +454,46 @@ fun OptimizedFileList(
     }
 }
 
-
+@Composable
+private fun FolderSelectionActions(
+    fileCount: Int,
+    hasSelection: Boolean,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (hasSelection) {
+            TextButton(onClick = onClearSelection) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Clear")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        FilledTonalButton(
+            onClick = onSelectAll,
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.SelectAll,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Select all ($fileCount)")
+        }
+    }
+}
 
 
 /**

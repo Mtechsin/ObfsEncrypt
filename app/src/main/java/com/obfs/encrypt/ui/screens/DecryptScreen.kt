@@ -1,6 +1,7 @@
 package com.obfs.encrypt.ui.screens
 
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -156,8 +157,8 @@ fun DecryptScreen(
 
     FilePickerLauncher(pickType = pickType) { uris ->
         pickType = PickType.NONE
-        selectedUris = uris
-        showOutputDialog = true
+        selectedUris = uris.filter { uri -> activity.isObfsUri(uri) }
+        showOutputDialog = selectedUris.isNotEmpty()
     }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
@@ -317,7 +318,7 @@ fun DecryptScreen(
                          )
                          
                          Button(
-                             onClick = { pickType = PickType.MULTIPLE },
+                             onClick = { pickType = PickType.OBFS_MULTIPLE },
                              modifier = Modifier.fillMaxWidth()
                          ) {
                              Icon(
@@ -341,10 +342,29 @@ fun DecryptScreen(
                      title = stringResource(R.string.select_obfs_files),
                      subtitle = stringResource(R.string.select_obfs_files_subtitle),
                      icon = Icons.Default.FileOpen,
-                     onClick = { pickType = PickType.MULTIPLE },
+                     onClick = { pickType = PickType.OBFS_MULTIPLE },
                      modifier = Modifier
                   )
              }
         }
     }
+}
+
+private fun android.content.Context.isObfsUri(uri: Uri): Boolean {
+    val displayName = contentResolver.query(
+        uri,
+        arrayOf(OpenableColumns.DISPLAY_NAME),
+        null,
+        null,
+        null
+    )?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0) cursor.getString(index) else null
+        } else {
+            null
+        }
+    }
+
+    return (displayName ?: uri.lastPathSegment.orEmpty()).endsWith(".obfs", ignoreCase = true)
 }

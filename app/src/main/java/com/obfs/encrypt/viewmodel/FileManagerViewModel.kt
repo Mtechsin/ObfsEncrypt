@@ -319,6 +319,10 @@ class FileManagerViewModel @Inject constructor(
         _selectedItems.value = allFiles
     }
 
+    fun selectFiles(files: Collection<File>) {
+        _selectedItems.value = files.filter { it.isFile }.toSet()
+    }
+
     fun invertSelection() {
         val currentSelected = _selectedItems.value.toMutableSet()
         val allFiles = _filesAndFolders.value.filter { !it.isDirectory }.map { it.file }.toSet()

@@ -35,7 +35,7 @@ enum class FileFilter(val label: String, val icon: ImageVector) {
     IMAGES("Images", Icons.Outlined.Image),
     VIDEOS("Videos", Icons.Outlined.VideoFile),
     DOCUMENTS("Docs", Icons.Outlined.Description),
-    ENCRYPTED(".obfs", Icons.Outlined.Lock)
+    ENCRYPTED("OBFS", Icons.Outlined.Lock)
 }
 
 @Composable

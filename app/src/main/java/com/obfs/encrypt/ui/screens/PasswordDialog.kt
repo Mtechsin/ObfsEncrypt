@@ -67,6 +67,8 @@ fun PasswordDialog(
     val activity = LocalContext.current as androidx.appcompat.app.AppCompatActivity
     val vm = viewModel ?: hiltViewModel(activity)
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
     var passwordVisible by remember { mutableStateOf(false) }
     var deleteOriginal by remember { mutableStateOf(false) }
 
@@ -126,6 +128,28 @@ fun PasswordDialog(
                 if (!isDecryption) {
                     Spacer(modifier = Modifier.height(8.dp))
                     PasswordStrengthMeter(password = password)
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { Text(stringResource(R.string.confirm_password)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        shape = RoundedCornerShape(12.dp),
+                        isError = confirmPassword.isNotEmpty() && password != confirmPassword,
+                        supportingText = if (confirmPassword.isNotEmpty() && password != confirmPassword) {
+                            { Text(stringResource(R.string.passwords_do_not_match)) }
+                        } else null,
+                        trailingIcon = {
+                            val img = if (confirmPasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(imageVector = img, contentDescription = "Toggle confirm password visibility")
+                            }
+                        }
+                    )
                 }
 
                 AnimatedVisibility(
@@ -170,7 +194,7 @@ fun PasswordDialog(
                 },
                 modifier = Modifier,
                 shape = RoundedCornerShape(12.dp),
-                enabled = password.isNotEmpty()
+                enabled = password.isNotEmpty() && (isDecryption || password == confirmPassword)
             ) {
                 Text(
                     if (isDecryption) stringResource(R.string.decrypt) 

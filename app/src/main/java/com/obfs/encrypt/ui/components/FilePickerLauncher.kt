@@ -20,6 +20,14 @@ fun FilePickerLauncher(
     pickType: PickType,
     onResult: (List<Uri>) -> Unit
 ) {
+    val obfsMimeTypes = remember {
+        arrayOf(
+            "application/x-obfs",
+            "application/octet-stream",
+            "*/*"
+        )
+    }
+
     val singleFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -42,6 +50,7 @@ fun FilePickerLauncher(
         when (pickType) {
             PickType.SINGLE -> singleFileLauncher.launch(arrayOf("*/*"))
             PickType.MULTIPLE -> multipleFileLauncher.launch(arrayOf("*/*"))
+            PickType.OBFS_MULTIPLE -> multipleFileLauncher.launch(obfsMimeTypes)
             PickType.FOLDER -> folderLauncher.launch(null)
             PickType.NONE -> { /* No-op until requested */ }
         }
@@ -49,5 +58,5 @@ fun FilePickerLauncher(
 }
 
 enum class PickType {
-    NONE, SINGLE, MULTIPLE, FOLDER
+    NONE, SINGLE, MULTIPLE, OBFS_MULTIPLE, FOLDER
 }

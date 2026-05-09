@@ -633,7 +633,13 @@ fun FileBrowserScreen(
                                     haptic.click()
                                     fileManagerViewModel.toggleSelection(file)
                                 },
-                                onSelectAll = { fileManagerViewModel.selectAll() },
+                                onSelectAll = {
+                                    fileManagerViewModel.selectFiles(
+                                        displayFiles
+                                            .filter { !it.isDirectory }
+                                            .map { it.file }
+                                    )
+                                },
                                 onClearSelection = { fileManagerViewModel.clearSelection() },
                                 onRefresh = { fileManagerViewModel.refreshCurrentDirectory() },
                                 onToggleFavorite = { path ->
