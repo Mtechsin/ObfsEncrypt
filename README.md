@@ -12,10 +12,10 @@
 
 <div align="center">
 
-| Home Screen | Encryption | Decrypt | Settings | History |
-|:-----------:|:----------:|:-------:|:--------:|:-------:|
-| ![Home](docs/screenshots/home.png) | ![Encrypt](docs/screenshots/encrypt.png) | ![Decrypt](docs/screenshots/decrypt.png) | ![Settings](docs/screenshots/settings.png) | ![History](docs/screenshots/history.png) |
-| *Quick Actions* | *Choose Security Level* | *Decrypt with ease* | *Customize App* | *Track Operations* |
+| Home Screen | Encryption | Settings | History |
+|:-----------:|:----------:|:--------:|:-------:|
+| ![Home](docs/screenshots/home.png) | ![Encrypt](docs/screenshots/encrypt.png) | ![Settings](docs/screenshots/settings.png) | ![History](docs/screenshots/history.png) |
+| *Quick Actions* | *Choose Security Level* | *Customize App* | *Track Operations* |
 
 </div>
 
