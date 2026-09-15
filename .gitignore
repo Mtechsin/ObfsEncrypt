@@ -105,3 +105,13 @@ nul
 *.bak
 *.swp
 *~
+
+# AI & Agent artifacts
+.kilo/
+.claude/
+.cursor/
+.cline/
+.roo/
+.aide/
+.chat/
+.gemini/

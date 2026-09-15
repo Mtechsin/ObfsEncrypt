@@ -893,9 +893,15 @@ class MainViewModel @Inject constructor(
             }
         )
 
-        if (deleteOriginal) {
+        // Fixed CRIT-03: never delete the source archive when integrity failed.
+        // EncryptionHelper now returns success=false on HMAC/checksum failure,
+        // but double-gate here so a future caller can't regress silently.
+        val integrityOk = result.integrityResult?.isValid ?: true
+        if (deleteOriginal && result.success && integrityOk) {
             _statusMessage.value = "Securely shredding encrypted archive..."
             SecureDelete.secureDelete(app, sourceFile)
+        } else if (deleteOriginal && !integrityOk) {
+            _statusMessage.value = "Integrity check failed — original kept for safety."
         }
         
         return result
@@ -1035,9 +1041,13 @@ class MainViewModel @Inject constructor(
             throw e
         }
 
-        if (deleteOriginal) {
+        // Fixed CRIT-03 (device mode): same integrity gate as SAF path.
+        val integrityOk = result.integrityResult?.isValid ?: true
+        if (deleteOriginal && result.success && integrityOk) {
             _statusMessage.value = "Deleting encrypted file..."
             if (!file.delete()) _statusMessage.value = "Warning: Could not delete encrypted file"
+        } else if (deleteOriginal && !integrityOk) {
+            _statusMessage.value = "Integrity check failed — encrypted file kept for safety."
         }
         
         return result

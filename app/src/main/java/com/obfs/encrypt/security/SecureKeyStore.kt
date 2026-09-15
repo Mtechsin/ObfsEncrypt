@@ -169,145 +169,108 @@ class SecureKeyStore @Inject constructor() {
 
     /**
      * Load existing key or generate a new one.
+     *
+     * Fixed CRIT-01: KeyStore.getEntry() returns a KeyStore.SecretKeyEntry,
+     * never a SecretKey directly. The old `entry as? SecretKey` was always
+     * null and regenerated (destroying) the master key on every launch.
      */
     private fun loadOrCreateKey() {
-        masterKey = if (keyStore.containsAlias(KEY_ALIAS)) {
-            keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
-        } else {
-            generateKey()
-        }?.let { entry ->
-            entry as? SecretKey
-        } ?: generateKey()
+        val existing: SecretKey? = try {
+            if (keyStore.containsAlias(KEY_ALIAS)) {
+                (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            com.obfs.encrypt.diagnostics.AppLogger.w("SecureKeyStore", "Failed to load existing key", e)
+            null
+        }
+        masterKey = existing ?: generateKey()
     }
 
     /**
      * Generate a new AES-256 key in the Android Keystore.
+     *
+     * Fixed HIGH-02 + extra finding: the old key used
+     * setUserAuthenticationRequired(true) with validity -1. On API 30+ that
+     * requires a BiometricPrompt CryptoObject for EVERY use, so
+     * EncryptionWorker (background, no CryptoObject) always threw
+     * UserNotAuthenticatedException. The master key wraps batch passwords
+     * that must be usable from workers, so it MUST NOT require auth.
+     * Foreground biometric gating stays at the app layer
+     * (BiometricAuthManager.authenticate before retrieveStoredPassword).
      */
     private fun generateKey(): SecretKey? {
+        // Attempt StrongBox first, fall back to TEE on any failure.
         try {
-            val keyGenerator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES,
-                KEYSTORE_PROVIDER_ANDROID
-            )
-
-            val keyGenSpec = KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(KEY_SIZE_BITS)
-                // Require user authentication (device lock screen)
-                .setUserAuthenticationRequired(true)
-                // Allow key to be used even if user hasn't authenticated recently
-                // (protected by device lock screen)
-                .setUserAuthenticationValidityDurationSeconds(-1)
-                // Prevent key extraction even with root access
-                .setIsStrongBoxBacked(true)
-                .build()
-
-            keyGenerator.init(keyGenSpec)
-            return keyGenerator.generateKey()
+            return generateKeyInternal(requireAuth = false, useStrongBox = true)
         } catch (e: java.security.InvalidAlgorithmParameterException) {
-            // Handle case where biometrics are not enrolled
-            // Fall back to key without biometric requirement (device lock only)
-            android.util.Log.w(
+            com.obfs.encrypt.diagnostics.AppLogger.w(
                 "SecureKeyStore",
-                "Biometric auth not available, using device lock authentication only: ${e.message}"
+                "StrongBox/params unavailable, falling back to TEE",
+                e
             )
-            return generateKeyWithoutBiometric()
         } catch (e: Exception) {
-            // StrongBox not available, fall back to TEE-backed key
+            com.obfs.encrypt.diagnostics.AppLogger.w(
+                "SecureKeyStore",
+                "StrongBox unavailable, falling back to TEE",
+                e
+            )
+        }
+        return try {
+            generateKeyInternal(requireAuth = false, useStrongBox = false)
+        } catch (e: Exception) {
+            com.obfs.encrypt.diagnostics.AppLogger.e("SecureKeyStore", "Key generation failed", e)
+            null
+        }
+    }
+
+    private fun generateKeyInternal(requireAuth: Boolean, useStrongBox: Boolean): SecretKey? {
+        val keyGenerator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES,
+            KEYSTORE_PROVIDER_ANDROID
+        )
+
+        val builder = KeyGenParameterSpec.Builder(
+            KEY_ALIAS,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(KEY_SIZE_BITS)
+        if (requireAuth) {
+            builder.setUserAuthenticationRequired(true)
+            builder.setUserAuthenticationValidityDurationSeconds(30)
+        } else {
+            builder.setUserAuthenticationRequired(false)
+        }
+        if (useStrongBox) {
             try {
-                val keyGenerator = KeyGenerator.getInstance(
-                    KeyProperties.KEY_ALGORITHM_AES,
-                    KEYSTORE_PROVIDER_ANDROID
-                )
-
-                val keyGenSpec = KeyGenParameterSpec.Builder(
-                    KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(KEY_SIZE_BITS)
-                    .setUserAuthenticationRequired(true)
-                    .setUserAuthenticationValidityDurationSeconds(-1)
-                    .build()
-
-                keyGenerator.init(keyGenSpec)
-                return keyGenerator.generateKey()
-            } catch (e2: java.security.InvalidAlgorithmParameterException) {
-                // Handle case where biometrics are not enrolled (fallback path)
-                android.util.Log.w(
-                    "SecureKeyStore",
-                    "Biometric auth not available in fallback, using device lock only: ${e2.message}"
-                )
-                return generateKeyWithoutBiometric()
-            } catch (e2: Exception) {
-                e2.printStackTrace()
-                return null
+                builder.setIsStrongBoxBacked(true)
+            } catch (_: Exception) {
+                // Old devices ignore StrongBox flag; TEE fallback handled by caller.
             }
         }
+        val keyGenSpec = builder.build()
+
+        keyGenerator.init(keyGenSpec)
+        return keyGenerator.generateKey()
     }
 
     /**
      * Generate a key that only requires device lock screen (PIN/Pattern/Password),
      * without requiring biometric authentication. Used as fallback when biometrics
      * are not enrolled.
+     *
+     * Kept for backward compatibility. New keys do not require auth (see
+     * generateKey) so background workers keep working on API 30+.
      */
     private fun generateKeyWithoutBiometric(): SecretKey? {
-        try {
-            val keyGenerator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES,
-                KEYSTORE_PROVIDER_ANDROID
-            )
-
-            val keyGenSpec = KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(KEY_SIZE_BITS)
-                // Require user authentication (device lock screen only, no biometric required)
-                .setUserAuthenticationRequired(true)
-                // Allow key to be used even if user hasn't authenticated recently
-                .setUserAuthenticationValidityDurationSeconds(-1)
-                // Do NOT require biometric - allows key usage with just device lock
-                .build()
-
-            keyGenerator.init(keyGenSpec)
-            return keyGenerator.generateKey()
+        return try {
+            generateKeyInternal(requireAuth = false, useStrongBox = false)
         } catch (e: Exception) {
-            // Last resort: create key without any user authentication requirement
-            // This is less secure but allows the app to function
-            android.util.Log.w(
-                "SecureKeyStore",
-                "Device lock auth not available, using unauthenticated key: ${e.message}"
-            )
-            try {
-                val keyGenerator = KeyGenerator.getInstance(
-                    KeyProperties.KEY_ALGORITHM_AES,
-                    KEYSTORE_PROVIDER_ANDROID
-                )
-
-                val keyGenSpec = KeyGenParameterSpec.Builder(
-                    KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(KEY_SIZE_BITS)
-                    // No user authentication required - least secure fallback
-                    .build()
-
-                keyGenerator.init(keyGenSpec)
-                return keyGenerator.generateKey()
-            } catch (e3: Exception) {
-                e3.printStackTrace()
-                return null
-            }
+            e.printStackTrace()
+            null
         }
     }
 

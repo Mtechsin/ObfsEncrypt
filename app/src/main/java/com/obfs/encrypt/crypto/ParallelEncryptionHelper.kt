@@ -187,7 +187,7 @@ class ParallelEncryptionHelper {
             progressCallback(finalSize, finalSize, startTime)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Parallel Encryption Failed", e)
+            com.obfs.encrypt.diagnostics.AppLogger.e(TAG, "Parallel encryption failed", e)
             throw e
         } finally {
             inputStream.close()
@@ -322,7 +322,7 @@ class ParallelEncryptionHelper {
             return@withContext DecryptionResult(success = true)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Decryption Failed", e)
+            com.obfs.encrypt.diagnostics.AppLogger.e(TAG, "Decryption failed", e)
             throw e
         } finally {
             inputStream.close()

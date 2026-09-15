@@ -43,11 +43,18 @@ class BatchEncryptionManager @Inject constructor(
         val tempPasswordFile = File(context.cacheDir, "obfs_batch_${System.currentTimeMillis()}.bin")
         tempPasswordFile.writeText(gson.toJson(encryptedPassword))
 
-        val urisJson = gson.toJson(uris.map { it.toString() })
-        
+        // Fixed HIGH-06: WorkManager Data is capped at ~10KB. A JSON list of
+        // content URIs easily exceeds that for large batches / long URIs and
+        // throws IllegalStateException at enqueue time. Spill the URI list to
+        // a cache file and pass only the path (same pattern as the password).
+        val urisFile = File(context.cacheDir, "obfs_uris_${System.currentTimeMillis()}.json")
+        urisFile.writeText(gson.toJson(uris.map { it.toString() }))
+
         val inputData = workDataOf(
             EncryptionWorker.KEY_OPERATION to operation,
-            EncryptionWorker.KEY_FILE_URIS to urisJson,
+            // Keep inline copy for small batches (back-compat); worker prefers file.
+            EncryptionWorker.KEY_FILE_URIS to "",
+            EncryptionWorker.KEY_FILE_URIS_FILE to urisFile.absolutePath,
             EncryptionWorker.KEY_PASSWORD_FILE to tempPasswordFile.absolutePath,
             EncryptionWorker.KEY_METHOD to method.name,
             EncryptionWorker.KEY_DELETE_ORIGINAL to deleteOriginal,

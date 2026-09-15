@@ -57,11 +57,13 @@ class EncryptionWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, workerParams) {
 
     companion object {
+        private const val TAG = "EncryptionWorker"
         const val NOTIFICATION_CHANNEL_ID = "encryption_progress_channel"
         const val NOTIFICATION_ID = 1001
         
         const val KEY_OPERATION = "operation"
         const val KEY_FILE_URIS = "file_uris"
+        const val KEY_FILE_URIS_FILE = "file_uris_file"
         const val KEY_PASSWORD_FILE = "password_file" // Secure file path
         const val KEY_PASSWORD = "password" // DEPRECATED for security
         const val KEY_METHOD = "method"
@@ -90,11 +92,22 @@ class EncryptionWorker @AssistedInject constructor(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         var password: CharArray? = null
         var tempPasswordFile: File? = null
+        var urisFile: File? = null
 
         try {
             // Get input data
             val operation = inputData.getString(KEY_OPERATION) ?: return@withContext Result.failure()
-            val fileUrisJson = inputData.getString(KEY_FILE_URIS) ?: return@withContext Result.failure()
+            // Prefer the spilled URI file (HIGH-06); fall back to inline JSON.
+            val urisFilePath = inputData.getString(KEY_FILE_URIS_FILE)
+            val fileUrisJson: String = if (!urisFilePath.isNullOrEmpty()) {
+                urisFile = File(urisFilePath)
+                try {
+                    urisFile!!.takeIf { it.exists() }?.readText().orEmpty()
+                } catch (_: Exception) { "" }
+            } else {
+                inputData.getString(KEY_FILE_URIS).orEmpty()
+            }
+            if (fileUrisJson.isEmpty()) return@withContext Result.failure()
             
             // Securely retrieve password from temporary file
             val passwordFilePath = inputData.getString(KEY_PASSWORD_FILE)
@@ -115,7 +128,7 @@ class EncryptionWorker @AssistedInject constructor(
                         // Delete the file immediately after reading
                         tempPasswordFile.delete()
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        com.obfs.encrypt.diagnostics.AppLogger.e(TAG, "Failed to restore worker password", e)
                         return@withContext Result.failure()
                     }
                 }
@@ -204,20 +217,25 @@ class EncryptionWorker @AssistedInject constructor(
                     setForeground(createForegroundInfo(operation, progress, fileName))
 
                 } catch (e: Exception) {
+                    com.obfs.encrypt.diagnostics.AppLogger.e(
+                        TAG,
+                        "File operation failed op=$operation",
+                        e
+                    )
                     // Log failure to history
                     historyRepository.addHistoryItem(
                         createHistoryItem(
                             fileName = fileName,
                             fileSize = fileSize,
-                            operationType = if (operation == OPERATION_ENCRYPT) 
-                                EncryptionHistoryItem.OperationType.ENCRYPT 
-                            else 
+                            operationType = if (operation == OPERATION_ENCRYPT)
+                                EncryptionHistoryItem.OperationType.ENCRYPT
+                            else
                                 EncryptionHistoryItem.OperationType.DECRYPT,
                             success = false,
                             errorMessage = e.localizedMessage
                         )
                     )
-                    
+
                     // Continue with next file instead of failing all
                     // Or fail completely based on preference
                     throw e
@@ -232,7 +250,7 @@ class EncryptionWorker @AssistedInject constructor(
             Result.success()
 
         } catch (e: Exception) {
-            e.printStackTrace()
+            com.obfs.encrypt.diagnostics.AppLogger.e(TAG, "Worker failed", e)
             cleanupPassword(password)
             Result.failure()
         } finally {
@@ -240,6 +258,9 @@ class EncryptionWorker @AssistedInject constructor(
             cleanupPassword(password)
             tempPasswordFile?.let {
                 if (it.exists()) it.delete()
+            }
+            urisFile?.let {
+                try { if (it.exists()) it.delete() } catch (_: Exception) {}
             }
         }
     }
@@ -366,7 +387,7 @@ class EncryptionWorker @AssistedInject constructor(
 
         val outputUri = fileEncryptionManager.createOutputFile(uri, encrypt = false)
 
-        fileEncryptionManager.decryptUri(
+        val result = fileEncryptionManager.decryptUri(
             sourceUri = uri,
             outputUri = outputUri,
             password = password,
@@ -378,6 +399,15 @@ class EncryptionWorker @AssistedInject constructor(
                 setForeground(createForegroundInfo(OPERATION_DECRYPT, overallProgress, "($index/$totalFiles) $fileName"))
             }
         )
+
+        // Fixed CRIT-03 (worker): FileEncryptionManager only commits plaintext
+        // on integrity success; mirror the foreground gate before shredding.
+        val integrityOk = result.integrityResult?.isValid ?: true
+        if (!result.success || !integrityOk) {
+            throw SecurityException(
+                result.integrityResult?.message ?: "Integrity verification failed — original kept."
+            )
+        }
 
         if (deleteOriginal) {
             com.obfs.encrypt.data.SecureDelete.secureDelete(applicationContext, sourceFile)

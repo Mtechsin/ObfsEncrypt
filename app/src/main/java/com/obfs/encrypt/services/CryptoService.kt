@@ -133,17 +133,22 @@ class CryptoService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val cancelPendingIntent = PendingIntent.getBroadcast(
+        // Fixed HIGH-07: the old code used getBroadcast(ACTION_CANCEL /
+        // ACTION_PAUSE), but the only receiver filters ACTION_BROADCAST_* and
+        // nothing listens for ACTION_CANCEL. Buttons were dead. Target the
+        // service directly — onStartCommand already handles these actions.
+        val cancelPendingIntent = PendingIntent.getService(
             this,
             1,
-            Intent(ACTION_CANCEL),
+            Intent(this, CryptoService::class.java).setAction(ACTION_CANCEL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val pauseResumeIntent = PendingIntent.getBroadcast(
+        val pauseResumeIntent = PendingIntent.getService(
             this,
             2,
-            Intent(if (isPaused) ACTION_RESUME else ACTION_PAUSE),
+            Intent(this, CryptoService::class.java)
+                .setAction(if (isPaused) ACTION_RESUME else ACTION_PAUSE),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -153,6 +158,8 @@ class CryptoService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            // File names are sensitive; keep them off the lockscreen.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setProgress(100, progress, progress == 0)
             .addAction(
                 if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,

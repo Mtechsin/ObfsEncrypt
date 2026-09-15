@@ -262,8 +262,21 @@ private fun TextFilePreview(file: File) {
     val context = LocalContext.current
     val content = remember(file) {
         try {
-            // Read first 5000 characters to avoid memory issues
-            file.readText(charset = Charsets.UTF_8).take(5000)
+            // Fixed CRIT-06: stream only the head instead of
+            // file.readText().take(5000), which materialised the whole file
+            // (OOM / disk-read DoS on large files).
+            file.inputStream().bufferedReader(Charsets.UTF_8).use { reader ->
+                val sb = StringBuilder()
+                val buf = CharArray(1024)
+                var remaining = 5000
+                while (remaining > 0) {
+                    val n = reader.read(buf, 0, minOf(buf.size, remaining))
+                    if (n == -1) break
+                    sb.append(buf, 0, n)
+                    remaining -= n
+                }
+                sb.toString()
+            }
         } catch (e: Exception) {
             "Unable to read file"
         }

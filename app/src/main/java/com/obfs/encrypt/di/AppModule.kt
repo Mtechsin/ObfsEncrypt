@@ -69,9 +69,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideBiometricAuthManager(
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
+        secureKeyStore: com.obfs.encrypt.security.SecureKeyStore
     ): BiometricAuthManager {
-        return BiometricAuthManager(context)
+        return BiometricAuthManager(context, secureKeyStore)
     }
 
     @Provides

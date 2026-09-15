@@ -8,13 +8,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -93,6 +96,13 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // MED-01: block screenshots / recent-task thumbnails of file lists,
+        // decrypted names, and plaintext previews.
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_SECURE,
+            android.view.WindowManager.LayoutParams.FLAG_SECURE
+        )
+
         // Apply saved language preference
         lifecycleScope.launch {
             val settingsRepository = (application as ObfsApp).settingsRepository
@@ -169,6 +179,14 @@ class MainActivity : AppCompatActivity() {
             val appTheme by mainViewModel.appTheme.collectAsState()
             val dynamicColor by mainViewModel.dynamicColor.collectAsState()
             val amoledMode by mainViewModel.amoledMode.collectAsState()
+            // Fixed CRIT-05: derive lock directly from flows so the value
+            // survives activity recreation. The old activity-local
+            // showBiometricDialog reset to false before RESUMED collectors
+            // ran, briefly exposing content. Content is now gated on lock.
+            val isLocked by appLockManager.isLocked.collectAsState()
+            val isLockEnabled by appLockManager.isLockEnabled.collectAsState()
+            val isPasswordSet = appPasswordManager.isPasswordSet()
+            val lockActive = isLocked && isLockEnabled && isPasswordSet
 
             ObfsEncryptTheme(
                 themeMode = themeMode,
@@ -180,7 +198,21 @@ class MainActivity : AppCompatActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AppNavigation()
+                    if (lockActive) {
+                        // Composition gate: no navigation content while locked.
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Locked",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        AppNavigation()
+                    }
                 }
 
                 // Show onboarding on first run
@@ -234,16 +266,17 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
 
-                if (showBiometricDialog) {
+                if (lockActive) {
                     AuthDialog(
                         appPasswordManager = appPasswordManager,
                         appLockManager = appLockManager,
                         biometricAuthManager = biometricAuthManager,
                         onDismiss = {
-                            showBiometricDialog = false
+                            // Non-dismissable while locked; ignore.
                         },
                         onAuthSuccess = {
-                            showBiometricDialog = false
+                            // appLockManager.unlock() called inside dialog;
+                            // lockActive recomposes to false automatically.
                         }
                     )
                 }

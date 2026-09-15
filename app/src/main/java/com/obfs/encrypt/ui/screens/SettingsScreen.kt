@@ -39,6 +39,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
@@ -158,6 +159,9 @@ fun SettingsScreen(
 
     // Language selection dialog
     var showLanguageDialog by remember { mutableStateOf(false) }
+
+    // Bug report dialog
+    var showBugReportDialog by remember { mutableStateOf(false) }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -564,7 +568,53 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            // Support / Bug report
+            SettingsSectionHeader(title = stringResource(R.string.support))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.clickable { showBugReportDialog = true }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.BugReport,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.report_a_bug),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = stringResource(R.string.report_a_bug_subtitle),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
         }
+    }
+
+    if (showBugReportDialog) {
+        BugReportDialog(
+            viewModel = viewModel,
+            onDismiss = { showBugReportDialog = false }
+        )
     }
 
     // App Lock Timeout Selection Dialog

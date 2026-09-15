@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+contact_links:
+  # Replace OWNER/obfesc with your real GitHub org/repo before publishing.
+  - name: How to report a bug (in-app)
+    url: https://github.com/OWNER/obfesc/blob/main/docs/BUG_REPORTING.md
+    about: Export a sanitized diagnostic report from Settings → Support → Report a bug.
+  - name: Security
+    url: https://github.com/OWNER/obfesc/blob/main/README.md
+    about: Do not file public issues for security vulnerabilities.

@@ -25,9 +25,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,6 +73,7 @@ fun HelpScreen(
     onShowEncryptionExplainer: (() -> Unit)? = null
 ) {
     var showEncryptionExplainer by remember { mutableStateOf(false) }
+    var showBugReportDialog by remember { mutableStateOf(false) }
 
     val faqItems = listOf(
         FAQItem(R.string.faq_question_1, R.string.faq_answer_1),
@@ -80,7 +83,8 @@ fun HelpScreen(
         FAQItem(R.string.faq_question_5, R.string.faq_answer_5),
         FAQItem(R.string.faq_question_6, R.string.faq_answer_6),
         FAQItem(R.string.faq_question_7, R.string.faq_answer_7),
-        FAQItem(R.string.faq_question_8, R.string.faq_answer_8)
+        FAQItem(R.string.faq_question_8, R.string.faq_answer_8),
+        FAQItem(R.string.faq_question_9, R.string.faq_answer_9)
     )
 
     var expandedIndex by rememberSaveable { mutableIntStateOf(-1) }
@@ -153,8 +157,27 @@ fun HelpScreen(
 
             AppInfoSection()
 
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = { showBugReportDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.BugReport,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(stringResource(R.string.report_a_bug))
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+
+    if (showBugReportDialog) {
+        BugReportDialog(onDismiss = { showBugReportDialog = false })
     }
 }
 
@@ -329,7 +352,7 @@ private fun AppInfoSection() {
         )
 
         Text(
-            text = "v1.0.0",
+            text = "v${com.obfs.encrypt.BuildConfig.VERSION_NAME}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

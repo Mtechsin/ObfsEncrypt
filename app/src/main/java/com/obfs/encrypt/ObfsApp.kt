@@ -2,8 +2,8 @@ package com.obfs.encrypt
 
 import android.app.Application
 import androidx.work.Configuration
-import androidx.work.WorkManager
-import com.obfs.encrypt.data.SettingsRepository
+import com.obfs.encrypt.diagnostics.AppLogger
+import com.obfs.encrypt.diagnostics.CrashHandler
 import com.obfs.encrypt.security.AppLockManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -22,7 +22,7 @@ class ObfsApp : Application(), Configuration.Provider {
     lateinit var workerFactory: androidx.hilt.work.HiltWorkerFactory
 
     @Inject
-    lateinit var settingsRepository: SettingsRepository
+    lateinit var settingsRepository: com.obfs.encrypt.data.SettingsRepository
 
     @Inject
     lateinit var appLockManager: AppLockManager
@@ -34,8 +34,11 @@ class ObfsApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        CrashHandler.install(this)
+        AppLogger.i("ObfsApp", "onCreate version=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+
         // WorkManager auto-initializes using Configuration.Provider
-        
+
         // Initialize app lock manager for process-wide lifecycle observation
         appLockManager.init()
     }

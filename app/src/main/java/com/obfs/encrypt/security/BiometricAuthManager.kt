@@ -23,14 +23,16 @@ import kotlin.coroutines.resume
  */
 @Singleton
 class BiometricAuthManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val secureKeyStore: SecureKeyStore
 ) {
 
     private val biometricManager = BiometricManager.from(context)
-    private val secureKeyStore = SecureKeyStore()
 
     init {
-        secureKeyStore.initialize()
+        if (!secureKeyStore.isInitialized()) {
+            secureKeyStore.initialize()
+        }
     }
 
     /**

@@ -341,4 +341,23 @@
     <string name="tooltip_output_folder">Choose where encrypted files are saved.</string>
     <string name="tooltip_app_lock">Require authentication each time you open the app.</string>
     <string name="show_tooltip">Show tooltip</string>
+
+    <!-- Bug report / diagnostics -->
+    <string name="support">Support</string>
+    <string name="report_a_bug">Report a bug</string>
+    <string name="report_a_bug_subtitle">Export a private diagnostic report you can share</string>
+    <string name="bug_report_privacy_note">Obfs Encrypt never uploads data. You choose where to send this report. Passwords, keys, file contents, and full file paths are never included.</string>
+    <string name="bug_report_includes">Includes: app version, device model and Android version, non-secret settings, recent encrypt/decrypt results (file names redacted), and recent log events.</string>
+    <string name="bug_report_summary_label">What happened?</string>
+    <string name="bug_report_summary_hint">Steps to reproduce, what you expected, and what you saw</string>
+    <string name="bug_report_share">Share</string>
+    <string name="bug_report_copy">Copy</string>
+    <string name="bug_report_copied">Report copied to clipboard</string>
+    <string name="bug_report_copy_failed">Could not copy report</string>
+    <string name="bug_report_share_failed">Could not open share sheet</string>
+    <string name="bug_report_share_subject">Obfs Encrypt bug report</string>
+    <string name="bug_report_share_chooser">Share bug report</string>
+    <string name="bug_report_build_failed">Could not build report: %1$s</string>
+    <string name="faq_question_9">How do I report a bug?</string>
+    <string name="faq_answer_9">Open Settings → Support → Report a bug. Add a short description, then Share or Copy. The report is built on your device and excludes passwords, keys, file contents, and full paths. Paste it into a GitHub issue or send it however you prefer.</string>
 </resources>
