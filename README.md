@@ -102,6 +102,16 @@ obfesc/
 
 Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) guidelines.
 
+### Reporting bugs
+
+1. In the app: **Settings → Support → Report a bug**
+2. Add a short description, then **Share** or **Copy**
+3. Open a GitHub issue using the **Bug report** template and paste the diagnostics
+
+The report is built on-device and never includes passwords, keys, file contents,
+or full file paths. See [docs/BUG_REPORTING.md](docs/BUG_REPORTING.md) for the
+privacy contract and developer triage guide.
+
 ---
 
 ## 📄 License

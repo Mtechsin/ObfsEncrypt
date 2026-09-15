@@ -68,16 +68,26 @@ class FileManagerViewModel @Inject constructor(
         
         appDirectoryManager.getAppDirectory()?.let { roots.add(it) }
         
-        try {
-            val storageManager = application.getSystemService(StorageManager::class.java)
-            storageManager?.storageVolumes?.forEach { volume ->
-                volume.directory?.let { dir ->
-                    if (!roots.any { it.absolutePath.startsWith(dir.absolutePath) }) {
-                        roots.add(dir)
+        // Fixed HIGH-04: StorageVolume.directory is API 30+. On API 24-29 the
+        // method doesn't exist, throwing NoSuchMethodError (an Error, not an
+        // Exception), which escaped `catch (_: Exception)` and crashed first
+        // access of rootDirectories. Guard by SDK and catch Throwable.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            try {
+                val storageManager = application.getSystemService(StorageManager::class.java)
+                storageManager?.storageVolumes?.forEach { volume ->
+                    try {
+                        volume.directory?.let { dir ->
+                            if (!roots.any { it.absolutePath.startsWith(dir.absolutePath) }) {
+                                roots.add(dir)
+                            }
+                        }
+                    } catch (_: Throwable) {
+                        // Skip volumes that can't be resolved on this device.
                     }
                 }
-            }
-        } catch (_: Exception) {}
+            } catch (_: Throwable) {}
+        }
         
         roots
     }

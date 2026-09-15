@@ -9,20 +9,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Handle Secure Deletion of unencrypted files to prevent data recovery.
+ * Handle Secure Deletion of unencrypted files to prevent casual data recovery.
  *
- * Why this approach was chosen:
- * Standard file deletion simply unlinks the file metadata, leaving traces on the flash memory.
- * By using a 3-pass overwrite (0x00, 0xFF, random), we make recovery extremely difficult,
- * even for forensics on traditional SSDs/eMMCs (subject to wear leveling constraints).
- * 
- * Performance implications:
- * A 3-pass overwrite is slow. We perform this on the IO dispatcher.
- * 
- * Android 7 / SAF compatibility tricks used:
- * If working on modern Android via DocumentFile, direct file access isn't always available 
- * or relies on FUSE which complicates deep overwriting. We grab the content resolver and 
- * perform the overwrite streamingly before calling DocumentFile.delete().
+ * Honest limitation (MED-02): on flash storage with FTL/wear-leveling the OS
+ * cannot guarantee the same physical blocks are overwritten, and SAF writes
+ * via ContentResolver may go through FUSE. This 3-pass overwrite raises the
+ * bar for software undelete tools but is NOT an anti-forensic guarantee.
+ * Callers needing stronger assurance should also rely on file encryption
+ * (ciphertext without the key is unrecoverable) rather than deletion alone.
  */
 object SecureDelete {
 
@@ -52,6 +46,15 @@ object SecureDelete {
                         written += toWrite
                     }
                     outStream.flush()
+                }
+                // Push bytes out of OS caches toward storage. Best-effort:
+                // flash FTL may still remap blocks (see class KDoc).
+                try {
+                    contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
+                        pfd.fileDescriptor.sync()
+                    }
+                } catch (_: Exception) {
+                    // Sync unavailable via this provider; overwrite still attempted.
                 }
             }
             // Finally, actually delete the file structure

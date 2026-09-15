@@ -28,6 +28,9 @@ class FileEncryptionManager @Inject constructor(
 
     /**
      * Encrypt a file from a Uri to an output Uri.
+     *
+     * Staged via a cache-dir temp file so a crash/cancel never leaves a
+     * truncated ciphertext at the final URI.
      */
     suspend fun encryptUri(
         sourceUri: Uri,
@@ -44,25 +47,50 @@ class FileEncryptionManager @Inject constructor(
             ?: throw IllegalArgumentException("Could not read source file")
         val fileSize = sourceFile.length()
 
-        cr.openInputStream(sourceUri)?.use { inputStream ->
-            cr.openOutputStream(outputUri)?.use { outputStream ->
-                encryptionHelper.encrypt(
-                    inputStream = inputStream,
-                    outputStream = outputStream,
-                    password = password,
-                    method = method,
-                    progressCallback = progressCallback,
-                    totalSize = fileSize,
-                    keyfileBytes = keyfileBytes,
-                    enableIntegrityCheck = enableIntegrityCheck,
-                    isPaused = isPaused
-                )
+        val tmp = File.createTempFile("obfs_enc_", ".tmp", context.cacheDir)
+        try {
+            cr.openInputStream(sourceUri)?.use { inputStream ->
+                tmp.outputStream().use { tmpOut ->
+                    encryptionHelper.encrypt(
+                        inputStream = inputStream,
+                        outputStream = tmpOut,
+                        password = password,
+                        method = method,
+                        progressCallback = progressCallback,
+                        totalSize = fileSize,
+                        keyfileBytes = keyfileBytes,
+                        enableIntegrityCheck = enableIntegrityCheck,
+                        isPaused = isPaused
+                    )
+                }
+            } ?: throw IllegalStateException("Could not open input stream")
+            // Commit staged ciphertext to the final URI only after success.
+            cr.openOutputStream(outputUri, "w")?.use { finalOut ->
+                tmp.inputStream().use { tmpIn -> tmpIn.copyTo(finalOut) }
+                finalOut.flush()
             } ?: throw IllegalStateException("Could not open output stream")
-        } ?: throw IllegalStateException("Could not open input stream")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            try { tmp.delete() } catch (_: Exception) {}
+            deleteUriQuietly(outputUri)
+            throw e
+        } catch (e: Exception) {
+            try { tmp.delete() } catch (_: Exception) {}
+            deleteUriQuietly(outputUri)
+            throw e
+        } finally {
+            try { tmp.delete() } catch (_: Exception) {}
+        }
     }
 
     /**
      * Decrypt a file from a Uri to an output Uri.
+     *
+     * Fixed CRIT-04: previously streamed plaintext straight into the final
+     * URI with no staging and no cleanup, leaving partial plaintext behind
+     * on failure/cancel. Now decrypts into a cache-dir temp file first and
+     * commits to the final URI only when decryption (and integrity, when
+     * present) succeeds. Temp + partial outputs are deleted on any failure
+     * or coroutine cancellation.
      */
     suspend fun decryptUri(
         sourceUri: Uri,
@@ -78,21 +106,53 @@ class FileEncryptionManager @Inject constructor(
             ?: throw IllegalArgumentException("Could not read source file")
         val fileSize = sourceFile.length()
 
-        return cr.openInputStream(sourceUri)?.use { inputStream ->
-            cr.openOutputStream(outputUri)?.use { outputStream ->
-                encryptionHelper.decrypt(
-                    inputStream = inputStream,
-                    outputStream = outputStream,
-                    password = password,
-                    method = EncryptionMethod.STANDARD,
-                    progressCallback = progressCallback,
-                    totalSize = fileSize,
-                    keyfileBytes = keyfileBytes,
-                    verifyIntegrity = verifyIntegrity,
-                    isPaused = isPaused
-                )
-            } ?: throw IllegalStateException("Could not open output stream")
-        } ?: throw IllegalStateException("Could not open input stream")
+        val tmp = File.createTempFile("obfs_dec_", ".tmp", context.cacheDir)
+        try {
+            val result = cr.openInputStream(sourceUri)?.use { inputStream ->
+                tmp.outputStream().use { tmpOut ->
+                    encryptionHelper.decrypt(
+                        inputStream = inputStream,
+                        outputStream = tmpOut,
+                        password = password,
+                        method = EncryptionMethod.STANDARD,
+                        progressCallback = progressCallback,
+                        totalSize = fileSize,
+                        keyfileBytes = keyfileBytes,
+                        verifyIntegrity = verifyIntegrity,
+                        isPaused = isPaused
+                    )
+                }
+            } ?: throw IllegalStateException("Could not open input stream")
+
+            // Only commit plaintext when integrity (if any) verifies.
+            val integrityOk = result.integrityResult?.isValid ?: true
+            if (result.success && integrityOk) {
+                cr.openOutputStream(outputUri, "w")?.use { finalOut ->
+                    tmp.inputStream().use { tmpIn -> tmpIn.copyTo(finalOut) }
+                    finalOut.flush()
+                } ?: throw IllegalStateException("Could not open output stream")
+            } else {
+                // Do not leave an empty/partial file at the destination.
+                deleteUriQuietly(outputUri)
+            }
+            return result
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            deleteUriQuietly(outputUri)
+            throw e
+        } catch (e: Exception) {
+            deleteUriQuietly(outputUri)
+            throw e
+        } finally {
+            try { tmp.delete() } catch (_: Exception) {}
+        }
+    }
+
+    private fun deleteUriQuietly(uri: Uri) {
+        try {
+            DocumentFile.fromSingleUri(context, uri)?.delete()
+        } catch (_: Exception) {
+            try { context.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+        }
     }
 
     /**
@@ -142,11 +202,11 @@ class FileEncryptionManager @Inject constructor(
     }
 
     private fun createUniqueFile(parent: DocumentFile, name: String, mimeType: String): DocumentFile {
-        var finalName = name
+        var finalName = sanitizeFileName(name)
         var counter = 1
         while (parent.findFile(finalName) != null) {
-            val base = if (name.contains(".")) name.substringBeforeLast(".") else name
-            val ext = if (name.contains(".")) ".${name.substringAfterLast(".")}" else ""
+            val base = if (finalName.contains(".")) finalName.substringBeforeLast(".") else finalName
+            val ext = if (finalName.contains(".")) ".${finalName.substringAfterLast(".")}" else ""
             finalName = "$base ($counter)$ext"
             counter++
         }
@@ -154,11 +214,34 @@ class FileEncryptionManager @Inject constructor(
             ?: throw IllegalStateException("Failed to create output file")
     }
 
+    /**
+     * Strip path separators and parent refs so a crafted DocumentFile.name
+     * like "../../evil" can never escape the destination directory.
+     */
+    internal fun sanitizeFileName(name: String): String {
+        var clean = name.substringAfterLast('/').substringAfterLast('\\')
+        clean = clean.replace("..", "_")
+        clean = clean.filter { it.code >= 0x20 && it != '/' && it != '\\' && it.code != 0 }
+        if (clean.isBlank()) clean = "file_${System.currentTimeMillis()}"
+        // Cap length to avoid filesystem limits (255 bytes).
+        if (clean.length > 200) {
+            val ext = clean.substringAfterLast('.', "")
+            val base = clean.substringBeforeLast('.', clean)
+            clean = if (ext.isNotEmpty() && ext.length < 20) {
+                base.take(200 - ext.length - 1) + "." + ext
+            } else {
+                clean.take(200)
+            }
+        }
+        return clean
+    }
+
     private fun uniqueFileRaw(dir: File, name: String): File {
-        var f = File(dir, name)
+        val safeName = sanitizeFileName(name)
+        var f = File(dir, safeName)
         if (!f.exists()) return f
-        val base = name.substringBeforeLast(".")
-        val ext = if (name.contains(".")) ".${name.substringAfterLast(".")}" else ""
+        val base = safeName.substringBeforeLast(".")
+        val ext = if (safeName.contains(".")) ".${safeName.substringAfterLast(".")}" else ""
         var counter = 1
         while (f.exists()) {
             f = File(dir, "$base ($counter)$ext")

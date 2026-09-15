@@ -8,9 +8,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     
-    <!-- Storage permissions for Android 10 and below -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Storage permissions: READ/WRITE cover API <= 29 (legacy). MANAGE covers API 30+. -->
+    <!-- Fixed HIGH-03: maxSdkVersion 28 left API 29 (Android 10) with neither path. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     
     <!-- All files access for Android 11+ (optional, for full file management) -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
@@ -21,6 +22,7 @@
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
+        android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

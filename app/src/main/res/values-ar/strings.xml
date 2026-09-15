@@ -223,4 +223,23 @@
     <string name="no_security_question_set">لم يتم تعيين سؤال أمان</string>
     <string name="answer">الإجابة</string>
     <string name="incorrect_answer">إجابة غير صحيحة</string>
+
+    <!-- Bug report / diagnostics -->
+    <string name="support">الدعم</string>
+    <string name="report_a_bug">الإبلاغ عن خطأ</string>
+    <string name="report_a_bug_subtitle">صدّر تقرير تشخيص خاصاً يمكنك مشاركته</string>
+    <string name="bug_report_privacy_note">لا يرفع Obfs Encrypt أي بيانات. أنت تختار أين يُرسل التقرير. لا يتم تضمين كلمات المرور أو المفاتيح أو محتوى الملفات أو المسارات الكاملة أبداً.</string>
+    <string name="bug_report_includes">يتضمن: إصدار التطبيق، طراز الجهاز وإصدار أندرويد، الإعدادات غير السرية، نتائج التشفير/فك التشفير الأخيرة (أسماء الملفات مخفية)، وأحداث السجل الأخيرة.</string>
+    <string name="bug_report_summary_label">ماذا حدث؟</string>
+    <string name="bug_report_summary_hint">خطوات إعادة المشكلة، وما توقعته، وما ظهر لك</string>
+    <string name="bug_report_share">مشاركة</string>
+    <string name="bug_report_copy">نسخ</string>
+    <string name="bug_report_copied">تم نسخ التقرير إلى الحافظة</string>
+    <string name="bug_report_copy_failed">تعذر نسخ التقرير</string>
+    <string name="bug_report_share_failed">تعذر فتح نافذة المشاركة</string>
+    <string name="bug_report_share_subject">تقرير خطأ Obfs Encrypt</string>
+    <string name="bug_report_share_chooser">مشاركة تقرير الخطأ</string>
+    <string name="bug_report_build_failed">تعذر إنشاء التقرير: %1$s</string>
+    <string name="faq_question_9">كيف أبلّغ عن خطأ؟</string>
+    <string name="faq_answer_9">افتح الإعدادات ← الدعم ← الإبلاغ عن خطأ. أضف وصفاً مختصراً ثم شارك أو انسخ. يُنشأ التقرير على جهازك ولا يتضمن كلمات المرور أو المفاتيح أو محتوى الملفات أو المسارات الكاملة. الصقه في issue على GitHub أو أرسله بالطريقة التي تفضلها.</string>
 </resources>

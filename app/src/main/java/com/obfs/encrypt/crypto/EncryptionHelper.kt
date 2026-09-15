@@ -122,8 +122,13 @@ class EncryptionHelper(private val argon2Kt: Argon2Kt = Argon2Kt()) {
     
     /**
      * Derive a key from a keyfile.
-     * The keyfile bytes are hashed with SHA-256 to produce a 32-byte key.
-     * Optionally combines with a password if provided.
+     * The keyfile bytes are hashed with SHA-256, then run through Argon2id
+     * with the per-file salt — ALWAYS, even when no password is supplied.
+     *
+     * Fixed HIGH-01: the old path returned the raw SHA-256(keyfile) when
+     * password == null, skipping salt and Argon2id, so every file encrypted
+     * with the same keyfile shared one identical AES key. Now the salt
+     * diversifies each file's key.
      */
     suspend fun deriveKeyFromKeyfile(
         keyfileBytes: ByteArray,
@@ -137,25 +142,27 @@ class EncryptionHelper(private val argon2Kt: Argon2Kt = Argon2Kt()) {
             digest()
         }
         
-        // If password is provided, combine it with the keyfile hash
-        return@withContext if (password != null) {
-            // Combine password with keyfile hash and derive using Argon2
-            val combinedInput = String(password).toByteArray(Charsets.UTF_8) + keyfileHash
+        // Always run Argon2id with the per-file salt so each file gets a unique key.
+        val argonInput: ByteArray = if (password != null) {
+            String(password).toByteArray(Charsets.UTF_8) + keyfileHash
+        } else {
+            // Keyfile-only mode: keyfile hash is the Argon2 password input.
+            keyfileHash.copyOf()
+        }
+        try {
             val result = argon2Kt.hash(
                 mode = Argon2Mode.ARGON2_ID,
-                password = combinedInput,
+                password = argonInput,
                 salt = salt,
                 tCostInIterations = method.tCostInIterations,
                 mCostInKibibyte = method.mCostInKibibyte,
                 parallelism = method.parallelism,
                 hashLengthInBytes = 32
             )
-            Arrays.fill(combinedInput, 0.toByte())
+            return@withContext result.rawHashAsByteArray()
+        } finally {
+            Arrays.fill(argonInput, 0.toByte())
             keyfileHash.fill(0)
-            result.rawHashAsByteArray()
-        } else {
-            // Use keyfile hash directly (already 32 bytes)
-            keyfileHash
         }
     }
 
@@ -370,7 +377,7 @@ class EncryptionHelper(private val argon2Kt: Argon2Kt = Argon2Kt()) {
             progressCallback(finalSize, finalSize, startTime)
 
         } catch (e: Exception) {
-            Log.e("EncryptionHelper", "Encryption Failed", e)
+            com.obfs.encrypt.diagnostics.AppLogger.e("EncryptionHelper", "Encryption failed", e)
             throw e
         } finally {
             inputStream.close()
@@ -486,6 +493,12 @@ class EncryptionHelper(private val argon2Kt: Argon2Kt = Argon2Kt()) {
             var totalBytesDecrypted = 0L
             var chunkIndex = 0L
             var lastUpdateTime = startTime
+            // Exact header bytes consumed, for deterministic trailer detection.
+            val headerLen: Long = when {
+                isV4Format -> (MAGIC_HEADER.length + SALT_LENGTH + NONCE_LENGTH + 1 + 1 + 1 + HEADER_HMAC_LENGTH).toLong()
+                isV3Format -> (MAGIC_HEADER_V3.length + SALT_LENGTH + NONCE_LENGTH + 1 + 1).toLong()
+                else -> (MAGIC_HEADER_V2.length + SALT_LENGTH + NONCE_LENGTH).toLong()
+            }
 
             // For integrity verification - use a streaming digest instead of buffering all data
             val checksumDigest = if (hasIntegrityCheck || verifyIntegrity) {
@@ -526,16 +539,23 @@ class EncryptionHelper(private val argon2Kt: Argon2Kt = Argon2Kt()) {
                     break
                 }
 
-                // Additional check: if chunkLen is exactly 32 (checksum size), and we expect integrity data,
-                // it's ambiguous. But a chunk is always followed by more data or EOF.
-                // We'll prioritize the possibility of it being the checksum if it's at the end.
-                if (chunkLen == SHA256_CHECKSUM_LENGTH && hasIntegrityCheck) {
-                    // Peak ahead to see if there's enough data for this to be a chunk
-                    // (chunkLen bytes) + (at least 4 more bytes for next chunk or 64 for integrity)
-                    // If not, it's likely the checksum itself.
-                    // This is a heuristic, but reliable since SHA256_CHECKSUM_LENGTH is small.
-                    pushbackStream.unread(lenBuf)
-                    break
+                // Fixed CRIT-02: removed the old `chunkLen == 32 -> trailer`
+                // heuristic. A final 16-byte plaintext chunk encrypts to exactly
+                // 32 bytes (16 + GCM tag), so the heuristic silently dropped the
+                // last 16 bytes of every such file when integrity was on.
+                // Trailer is detected deterministically instead: when the total
+                // encrypted size is known, the 64-byte trailer
+                // (32 checksum + 32 HMAC) is exactly the remaining bytes.
+                // Otherwise every syntactically valid length is treated as a
+                // chunk; a checksum's random prefix bytes almost never parse as
+                // a satisfiable chunk length, and a short read still breaks to
+                // the trailer path below.
+                if (hasIntegrityCheck && totalSize > 0) {
+                    val remainingBefore = totalSize - headerLen - totalBytesDecrypted
+                    if (remainingBefore == (SHA256_CHECKSUM_LENGTH + HMAC_SHA256_LENGTH).toLong()) {
+                        pushbackStream.unread(lenBuf)
+                        break
+                    }
                 }
 
                 val cipherChunk = ByteArray(chunkLen)
@@ -590,16 +610,12 @@ class EncryptionHelper(private val argon2Kt: Argon2Kt = Argon2Kt()) {
                         throw IllegalArgumentException("Corrupted file: could not read integrity HMAC")
                     }
 
-                    // Verify HMAC first
+                    // Verify HMAC first (no secret material in logs — MED-01).
                     val hmacValid = verifyHmac(expectedChecksum, key, expectedHmac)
-                    Log.d("EncryptionHelper", "HMAC valid: $hmacValid, checksumDigest: ${checksumDigest != null}")
 
                     if (hmacValid && checksumDigest != null) {
                         val computedChecksum = checksumDigest.digest()
-                        Log.d("EncryptionHelper", "Expected checksum: ${expectedChecksum.joinToString("") { "%02x".format(it) }}")
-                        Log.d("EncryptionHelper", "Computed checksum: ${computedChecksum.joinToString("") { "%02x".format(it) }}")
                         val checksumValid = java.security.MessageDigest.isEqual(computedChecksum, expectedChecksum)
-                        Log.d("EncryptionHelper", "Checksum valid: $checksumValid")
                         integrityResult = IntegrityResult(
                             hmacValid = true,
                             checksumValid = checksumValid,
@@ -634,19 +650,23 @@ class EncryptionHelper(private val argon2Kt: Argon2Kt = Argon2Kt()) {
             val finalSize = fileSize ?: totalBytesDecrypted
             progressCallback(finalSize, finalSize, startTime)
 
+            // Fixed CRIT-03 (part 1): success must reflect integrity. The old code
+            // always returned success=true even when HMAC/checksum failed,
+            // so callers deleted originals after tampered decrypts.
+            val integrityOk = integrityResult?.isValid ?: true
             return@withContext DecryptionResult(
-                success = true,
+                success = integrityOk,
                 integrityResult = integrityResult
             )
 
         } catch (e: javax.crypto.AEADBadTagException) {
-            Log.e("EncryptionHelper", "Password verification failed - AEAD tag mismatch", e)
+            com.obfs.encrypt.diagnostics.AppLogger.e("EncryptionHelper", "Password verification failed - AEAD tag mismatch", e)
             throw SecurityException("Incorrect password or corrupted file. The authentication tag verification failed.")
         } catch (e: java.security.GeneralSecurityException) {
-            Log.e("EncryptionHelper", "Security error during decryption", e)
+            com.obfs.encrypt.diagnostics.AppLogger.e("EncryptionHelper", "Security error during decryption", e)
             throw SecurityException("Decryption failed due to a security error: ${e.message}")
         } catch (e: Exception) {
-            Log.e("EncryptionHelper", "Decryption Failed", e)
+            com.obfs.encrypt.diagnostics.AppLogger.e("EncryptionHelper", "Decryption failed", e)
             throw e
         } finally {
             pushbackStream.close()

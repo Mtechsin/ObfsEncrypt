@@ -16,6 +16,7 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 // Extension property to create DataStore instance
@@ -108,12 +109,6 @@ class EncryptionHistoryRepository @Inject constructor(
      */
     suspend fun getRecentItems(count: Int = 10): List<EncryptionHistoryItem> {
         return historyItems.first().take(count)
-    }
-
-    private suspend fun Flow<List<EncryptionHistoryItem>>.first(): List<EncryptionHistoryItem> {
-        var result: List<EncryptionHistoryItem>? = null
-        this.collect { result = it }
-        return result ?: emptyList()
     }
 }
 
